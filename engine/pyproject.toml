@@ -1,0 +1,25 @@
+[project]
+name = "tabula-engine"
+version = "0.1.0"
+description = "Core workflow definition, canonical data model, and execution engine for Tabula"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "polars>=1.9",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tabula_engine"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

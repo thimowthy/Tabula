@@ -1,0 +1,73 @@
+.tabula-grid.rdg {
+  --rdg-color: var(--color-text);
+  --rdg-border-color: var(--color-border);
+  --rdg-summary-border-color: var(--color-border-strong);
+  --rdg-background-color: var(--color-bg);
+  --rdg-header-background-color: var(--color-header-bg);
+  --rdg-header-draggable-background-color: var(--color-surface-hover);
+  --rdg-row-hover-background-color: var(--color-surface);
+  --rdg-row-selected-background-color: var(--color-selection);
+  --rdg-row-selected-hover-background-color: var(--color-selection);
+  --rdg-selection-color: transparent;
+  --rdg-font-size: 13px;
+  block-size: 100%;
+  inline-size: 100%;
+  border: none;
+  border-radius: 0;
+}
+
+.tabula-grid .rdg-header-row {
+  font-weight: 500;
+}
+
+.tabula-grid .rdg-cell {
+  padding-inline: 0;
+  border-inline-end: 1px solid var(--color-border);
+  border-block-end: 1px solid var(--color-border);
+  outline: none;
+}
+
+.tabula-grid .rdg-cell[aria-selected='true'] {
+  outline: none;
+}
+
+.tabula-cell-content {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  padding-inline: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tabula-rownum-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  color: var(--color-text-subtle);
+  font-size: 11px;
+  background: var(--color-header-bg);
+  cursor: default;
+  user-select: none;
+}
+
+.tabula-selected {
+  background-color: var(--color-selection);
+}
+
+.tabula-edge-top {
+  border-block-start: 2px solid var(--color-selection-border) !important;
+}
+.tabula-edge-bottom {
+  border-block-end: 2px solid var(--color-selection-border) !important;
+}
+.tabula-edge-left {
+  border-inline-start: 2px solid var(--color-selection-border) !important;
+}
+.tabula-edge-right {
+  border-inline-end: 2px solid var(--color-selection-border) !important;
+}

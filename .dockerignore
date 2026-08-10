@@ -1,0 +1,14 @@
+node_modules
+dist
+.git
+
+engine/.venv
+engine/__pycache__
+engine/**/__pycache__
+engine/**/*.pyc
+
+server/.venv
+server/__pycache__
+server/**/__pycache__
+server/**/*.pyc
+server/tabula.db
