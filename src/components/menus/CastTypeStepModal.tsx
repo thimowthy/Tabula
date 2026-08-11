@@ -2,20 +2,57 @@ import { useState } from 'react';
 import { useWorkbookStore } from '../../store/useWorkbookStore';
 import { useSelectionActions } from '../../grid/useSelectionActions';
 import { Modal } from '../ui/Modal';
+import type { AppCommand } from '../../commands/types';
 
 type Target = 'integer' | 'float' | 'datetime';
 
-export function CastTypeStepModal({ onClose }: { onClose: () => void }) {
+/** One shape covering whichever of the three cast_to_* steps is being
+ * edited — CastTypeStepModal is the one modal shared by all three, so
+ * editing needs to know (and be able to change) which of them it is. */
+export type CastTypeInitialParams =
+  | { target: 'integer'; column: string }
+  | { target: 'float'; column: string }
+  | { target: 'datetime'; column: string; format: string | null };
+
+const TARGET_OPERATION_TYPE: Record<Target, string> = {
+  integer: 'cast_to_integer',
+  float: 'cast_to_float',
+  datetime: 'cast_to_datetime',
+};
+
+interface CastTypeStepModalProps {
+  onClose: () => void;
+  onApply?: (command: AppCommand) => void;
+  initialParams?: CastTypeInitialParams;
+  onSaveDefinition?: (operationType: string, params: Record<string, unknown>) => void;
+}
+
+export function CastTypeStepModal({ onClose, onApply, initialParams, onSaveDefinition }: CastTypeStepModalProps) {
   const { sheet, selectedColumnId } = useSelectionActions();
   const dispatch = useWorkbookStore((s) => s.dispatch);
-  const [columnId, setColumnId] = useState(selectedColumnId ?? sheet.columns[0]?.id ?? '');
-  const [target, setTarget] = useState<Target>('integer');
-  const [format, setFormat] = useState('');
+  const [columnId, setColumnId] = useState(
+    () => sheet.columns.find((c) => c.name === initialParams?.column)?.id ?? selectedColumnId ?? sheet.columns[0]?.id ?? '',
+  );
+  const [target, setTarget] = useState<Target>(initialParams?.target ?? 'integer');
+  const [format, setFormat] = useState(initialParams?.target === 'datetime' ? (initialParams.format ?? '') : '');
 
   function apply() {
-    if (target === 'integer') dispatch({ type: 'CAST_TO_INTEGER', payload: { sheetId: sheet.id, columnId } });
-    else if (target === 'float') dispatch({ type: 'CAST_TO_FLOAT', payload: { sheetId: sheet.id, columnId } });
-    else dispatch({ type: 'CAST_TO_DATETIME', payload: { sheetId: sheet.id, columnId, format: format || null } });
+    if (onSaveDefinition) {
+      const column = sheet.columns.find((c) => c.id === columnId);
+      if (!column) return;
+      const params = target === 'datetime' ? { column: column.name, format: format || null } : { column: column.name };
+      onSaveDefinition(TARGET_OPERATION_TYPE[target], params);
+      onClose();
+      return;
+    }
+    const command: AppCommand =
+      target === 'integer'
+        ? { type: 'CAST_TO_INTEGER', payload: { sheetId: sheet.id, columnId } }
+        : target === 'float'
+          ? { type: 'CAST_TO_FLOAT', payload: { sheetId: sheet.id, columnId } }
+          : { type: 'CAST_TO_DATETIME', payload: { sheetId: sheet.id, columnId, format: format || null } };
+    if (onApply) onApply(command);
+    else dispatch(command);
     onClose();
   }
 
@@ -81,7 +118,7 @@ export function CastTypeStepModal({ onClose }: { onClose: () => void }) {
           className="rounded px-3 py-1.5 text-[13px] font-medium text-white"
           style={{ background: 'var(--color-accent)' }}
         >
-          Aplicar e registrar etapa
+          {onSaveDefinition ? 'Salvar alterações' : 'Aplicar e registrar etapa'}
         </button>
       </div>
     </Modal>

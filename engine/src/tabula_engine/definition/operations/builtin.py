@@ -6,7 +6,11 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from pydantic import BaseModel, ConfigDict, model_validator
+
 from tabula_engine.common.types import ColumnType
+from ..condition import ConditionExpr
+from ..step import Step
 from .base import OperationSpec, register_operation
 
 
@@ -30,14 +34,25 @@ class DropColumnsOp(OperationSpec):
     columns: list[str]
 
 
-FilterOperator = Literal["eq", "neq", "gt", "gte", "lt", "lte", "contains", "is_null", "not_null"]
-
-
 @register_operation("filter_rows")
 class FilterRowsOp(OperationSpec):
-    column: str
-    operator: FilterOperator
-    value: Any | None = None
+    condition: ConditionExpr
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_shape(cls, data: Any) -> Any:
+        """Steps recorded before filter_rows gained AND/OR used a flat
+        {column, operator, value} shape — wrap it into ``condition`` on read
+        so workflow .json files exported before this change keep working."""
+        if isinstance(data, dict) and "condition" not in data and "column" in data:
+            return {
+                "condition": {
+                    "column": data["column"],
+                    "operator": data.get("operator"),
+                    "value": data.get("value"),
+                }
+            }
+        return data
 
 
 @register_operation("trim_whitespace")
@@ -46,10 +61,18 @@ class TrimWhitespaceOp(OperationSpec):
     """Leading/trailing whitespace strip. Empty list means "all text columns"."""
 
 
+FillSource = Literal["constant", "column"]
+
+
 @register_operation("fill_null")
 class FillNullOp(OperationSpec):
     column: str
-    value: Any
+    fill_type: FillSource = "constant"
+    value: Any = None
+    """Used when fill_type == 'constant'."""
+    source_column: str | None = None
+    """Used when fill_type == 'column' — the same-row value of this column
+    fills each null in ``column`` instead of a fixed ``value``."""
 
 
 @register_operation("cast_to_integer")
@@ -179,3 +202,47 @@ class AddColumnOp(OperationSpec):
     column_type: ColumnType
     default_value: Any = None
     """Creates a new column, filled with this value for every row (None means all-null)."""
+
+
+@register_operation("fix_decimal_places")
+class FixDecimalPlacesOp(OperationSpec):
+    column: str
+    decimals: int
+    """Formats the column as text with exactly this many digits after the
+    decimal separator (zero-padded), using a comma — unlike ``round``, which
+    keeps the column numeric and so can't preserve trailing zeros."""
+
+
+@register_operation("promote_header_row")
+class PromoteHeaderRowOp(OperationSpec):
+    row_index: int
+    """0-based index into the current data rows. That row's values become the
+    new column names; it and every row above it are dropped — a raw import
+    often has title/blank rows above the real header, so promoting a row other
+    than the first is what makes this a fix rather than just "use row 0"."""
+
+
+class WhenCase(BaseModel):
+    """One (condition -> branch) pair inside a ``when``. Not itself a
+    registered operation — just the shape of one entry in ``WhenOp.cases``."""
+
+    condition: ConditionExpr
+    operations: list[Step]
+
+    model_config = ConfigDict(frozen=True)
+
+
+@register_operation("when")
+class WhenOp(OperationSpec):
+    """Row-wise control flow: every operation inside a branch is an ordinary,
+    unmodified catalog operation — they don't know they're conditional. The
+    first ``case`` whose condition a row satisfies wins; rows matching no
+    case run ``default`` (or, if ``default`` is None, pass through
+    unchanged). One shape covers if/then/else (a single case + default) and
+    a switch (several cases + default), so there's never a need to nest
+    ``when`` just to add another branch — nesting is still possible (a
+    branch's ``operations`` can itself contain a ``when`` step) since
+    branches are just ``list[Step]`` like any other pipeline."""
+
+    cases: list[WhenCase]
+    default: list[Step] | None = None

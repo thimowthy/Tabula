@@ -1,13 +1,47 @@
 import type { AppCommand } from '../commands/types';
 import type { SheetModel, WorkflowOperation } from '../model/types';
+import { isConditionGroup, type ConditionExpr } from '../model/condition';
 
 function resolveColumnId(sheet: SheetModel, name: string): string | null {
   return sheet.columns.find((c) => c.name === name)?.id ?? null;
 }
 
 type Resolved = { command: AppCommand } | { error: string };
+type ResolvedCondition = { error: string } | ConditionExpr;
 
 const missing = (name: string): Resolved => ({ error: `coluna "${name}" não encontrada` });
+
+/** Recursively resolves a condition tree's column references by NAME (the
+ * recorded/portable form) into columnIds (what AppCommand payloads use) —
+ * the same id/name split every other operation already has, just walked
+ * over a tree instead of a single field. Shared by `filter_rows` and `when`. */
+function resolveCondition(sheet: SheetModel, condition: ConditionExpr): ResolvedCondition {
+  if (isConditionGroup(condition)) {
+    const conditions: ConditionExpr[] = [];
+    for (const c of condition.conditions) {
+      const resolved = resolveCondition(sheet, c);
+      if ('error' in resolved) return resolved;
+      conditions.push(resolved);
+    }
+    return { logic: condition.logic, conditions };
+  }
+  const columnId = resolveColumnId(sheet, condition.column);
+  if (!columnId) return { error: `coluna "${condition.column}" não encontrada` };
+  return { ...condition, column: columnId };
+}
+
+/** Resolves a branch's recorded WorkflowOperations into the AppCommands
+ * `when` runs them as — recursing through resolveWorkflowStep is what makes
+ * a nested `when` inside a branch replay correctly for free. */
+function resolveBranch(sheet: SheetModel, operations: WorkflowOperation[]): { commands: AppCommand[] } | { error: string } {
+  const commands: AppCommand[] = [];
+  for (const op of operations) {
+    const resolved = resolveWorkflowStep(op, sheet);
+    if ('error' in resolved) return resolved;
+    commands.push(resolved.command);
+  }
+  return { commands };
+}
 
 /** Translates one recorded WorkflowOperation into the AppCommand that already
  * implements it interactively — running an imported workflow is just
@@ -35,14 +69,9 @@ export function resolveWorkflowStep(step: WorkflowOperation, sheet: SheetModel):
       return { command: { type: 'DELETE_COLUMNS', payload: { sheetId, columnIds } } };
     }
     case 'filter_rows': {
-      const columnId = resolveColumnId(sheet, step.params.column);
-      if (!columnId) return missing(step.params.column);
-      return {
-        command: {
-          type: 'APPLY_FILTER_STEP',
-          payload: { sheetId, columnId, operator: step.params.operator, value: step.params.value },
-        },
-      };
+      const condition = resolveCondition(sheet, step.params.condition);
+      if ('error' in condition) return condition;
+      return { command: { type: 'APPLY_FILTER_STEP', payload: { sheetId, condition } } };
     }
     case 'trim_whitespace': {
       const columnIds = step.params.columns.map((n) => resolveColumnId(sheet, n)).filter((id): id is string => !!id);
@@ -51,7 +80,19 @@ export function resolveWorkflowStep(step: WorkflowOperation, sheet: SheetModel):
     case 'fill_null': {
       const columnId = resolveColumnId(sheet, step.params.column);
       if (!columnId) return missing(step.params.column);
-      return { command: { type: 'FILL_NULL', payload: { sheetId, columnId, value: step.params.value } } };
+      const fillType = step.params.fill_type ?? 'constant';
+      let sourceColumnId: string | null = null;
+      if (fillType === 'column') {
+        if (!step.params.source_column) return { error: 'coluna de origem não informada' };
+        sourceColumnId = resolveColumnId(sheet, step.params.source_column);
+        if (!sourceColumnId) return missing(step.params.source_column);
+      }
+      return {
+        command: {
+          type: 'FILL_NULL',
+          payload: { sheetId, columnId, fillType, value: step.params.value, sourceColumnId },
+        },
+      };
     }
     case 'cast_to_integer': {
       const columnId = resolveColumnId(sheet, step.params.column);
@@ -194,6 +235,33 @@ export function resolveWorkflowStep(step: WorkflowOperation, sheet: SheetModel):
           },
         },
       };
+    case 'promote_header_row': {
+      const row = sheet.rows[step.params.row_index];
+      if (!row) return { error: `linha ${step.params.row_index + 1} não encontrada` };
+      return { command: { type: 'PROMOTE_HEADER_ROW', payload: { sheetId, rowId: row.id } } };
+    }
+    case 'fix_decimal_places': {
+      const columnId = resolveColumnId(sheet, step.params.column);
+      if (!columnId) return missing(step.params.column);
+      return { command: { type: 'FIX_DECIMAL_PLACES', payload: { sheetId, columnId, decimals: step.params.decimals } } };
+    }
+    case 'when': {
+      const cases: { condition: ConditionExpr; operations: AppCommand[] }[] = [];
+      for (const c of step.params.cases) {
+        const condition = resolveCondition(sheet, c.condition);
+        if ('error' in condition) return condition;
+        const branch = resolveBranch(sheet, c.operations);
+        if ('error' in branch) return branch;
+        cases.push({ condition, operations: branch.commands });
+      }
+      let defaultCommands: AppCommand[] | null = null;
+      if (step.params.default !== null) {
+        const branch = resolveBranch(sheet, step.params.default);
+        if ('error' in branch) return branch;
+        defaultCommands = branch.commands;
+      }
+      return { command: { type: 'APPLY_WHEN', payload: { sheetId, cases, default: defaultCommands } } };
+    }
     default:
       return { error: 'tipo de operação não suportado nesta versão do Tabula' };
   }

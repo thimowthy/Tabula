@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from tabula_engine.common.types import ColumnType
-from .operations.base import OperationSpec, parse_operation
+from .step import Step
+
+__all__ = ["Step", "TargetColumn", "TargetSchema", "Workflow", "WorkflowVersion"]
 
 
 class TargetColumn(BaseModel):
@@ -33,27 +34,6 @@ class TargetSchema(BaseModel):
     columns: list[TargetColumn]
 
     model_config = ConfigDict(frozen=True)
-
-
-class Step(BaseModel):
-    """One entry in a workflow version's pipeline.
-
-    ``operation_type`` + ``params`` is the wire format (plain string + dict),
-    kept deliberately generic so ``Step`` never has to know about every
-    concrete ``OperationSpec`` subclass that exists — new operation types
-    don't require touching this model. Call ``.operation()`` to resolve and
-    validate it against the registry on demand.
-    """
-
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    operation_type: str
-    params: dict[str, Any] = Field(default_factory=dict)
-    label: str | None = None
-
-    model_config = ConfigDict(frozen=True)
-
-    def operation(self) -> OperationSpec:
-        return parse_operation(self.operation_type, self.params)
 
 
 class WorkflowVersion(BaseModel):

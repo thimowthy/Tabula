@@ -2,22 +2,44 @@ import { useState } from 'react';
 import { useWorkbookStore } from '../../store/useWorkbookStore';
 import { useSelectionActions } from '../../grid/useSelectionActions';
 import { Modal } from '../ui/Modal';
+import type { AppCommand } from '../../commands/types';
+import type { WorkflowOperation } from '../../model/types';
 
-export function ReplaceStepModal({ onClose }: { onClose: () => void }) {
+type ReplaceParams = Extract<WorkflowOperation, { type: 'replace' }>['params'];
+
+interface ReplaceStepModalProps {
+  onClose: () => void;
+  onApply?: (command: AppCommand) => void;
+  initialParams?: ReplaceParams;
+  onSaveDefinition?: (params: ReplaceParams) => void;
+}
+
+export function ReplaceStepModal({ onClose, onApply, initialParams, onSaveDefinition }: ReplaceStepModalProps) {
   const { sheet, selectedColumnId } = useSelectionActions();
   const dispatch = useWorkbookStore((s) => s.dispatch);
-  const [columnId, setColumnId] = useState(selectedColumnId ?? sheet.columns[0]?.id ?? '');
-  const [find, setFind] = useState('');
-  const [replace, setReplace] = useState('');
-  const [regex, setRegex] = useState(false);
-  const [matchCase, setMatchCase] = useState(true);
+  const [columnId, setColumnId] = useState(
+    () => sheet.columns.find((c) => c.name === initialParams?.column)?.id ?? selectedColumnId ?? sheet.columns[0]?.id ?? '',
+  );
+  const [find, setFind] = useState(initialParams?.find ?? '');
+  const [replace, setReplace] = useState(initialParams?.replace ?? '');
+  const [regex, setRegex] = useState(initialParams?.regex ?? false);
+  const [matchCase, setMatchCase] = useState(initialParams?.match_case ?? true);
 
   function apply() {
     if (!find) return;
-    dispatch({
+    if (onSaveDefinition) {
+      const column = sheet.columns.find((c) => c.id === columnId);
+      if (!column) return;
+      onSaveDefinition({ column: column.name, find, replace, regex, match_case: matchCase });
+      onClose();
+      return;
+    }
+    const command: AppCommand = {
       type: 'REPLACE_TEXT',
       payload: { sheetId: sheet.id, columnId, find, replace, regex, matchCase },
-    });
+    };
+    if (onApply) onApply(command);
+    else dispatch(command);
     onClose();
   }
 
@@ -77,7 +99,7 @@ export function ReplaceStepModal({ onClose }: { onClose: () => void }) {
           className="rounded px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-40"
           style={{ background: 'var(--color-accent)' }}
         >
-          Aplicar e registrar etapa
+          {onSaveDefinition ? 'Salvar alterações' : 'Aplicar e registrar etapa'}
         </button>
       </div>
     </Modal>

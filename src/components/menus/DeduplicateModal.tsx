@@ -2,11 +2,27 @@ import { useState } from 'react';
 import { useWorkbookStore } from '../../store/useWorkbookStore';
 import { useSelectionActions } from '../../grid/useSelectionActions';
 import { Modal } from '../ui/Modal';
+import type { WorkflowOperation } from '../../model/types';
 
-export function DeduplicateModal({ onClose }: { onClose: () => void }) {
+type DeduplicateParams = Extract<WorkflowOperation, { type: 'deduplicate' }>['params'];
+
+interface DeduplicateModalProps {
+  onClose: () => void;
+  initialParams?: DeduplicateParams;
+  onSaveDefinition?: (params: DeduplicateParams) => void;
+}
+
+export function DeduplicateModal({ onClose, initialParams, onSaveDefinition }: DeduplicateModalProps) {
   const { sheet } = useSelectionActions();
   const dispatch = useWorkbookStore((s) => s.dispatch);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(
+    () =>
+      new Set(
+        (initialParams?.columns ?? [])
+          .map((name) => sheet.columns.find((c) => c.name === name)?.id)
+          .filter((id): id is string => !!id),
+      ),
+  );
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -18,6 +34,11 @@ export function DeduplicateModal({ onClose }: { onClose: () => void }) {
   }
 
   function apply() {
+    if (onSaveDefinition) {
+      onSaveDefinition({ columns: sheet.columns.filter((c) => selected.has(c.id)).map((c) => c.name) });
+      onClose();
+      return;
+    }
     dispatch({ type: 'DEDUPLICATE_ROWS', payload: { sheetId: sheet.id, columnIds: Array.from(selected) } });
     onClose();
   }
@@ -42,7 +63,7 @@ export function DeduplicateModal({ onClose }: { onClose: () => void }) {
         className="mt-3 rounded px-3 py-1.5 text-[13px] font-medium text-white"
         style={{ background: 'var(--color-accent)' }}
       >
-        Aplicar e registrar etapa
+        {onSaveDefinition ? 'Salvar alterações' : 'Aplicar e registrar etapa'}
       </button>
     </Modal>
   );

@@ -2,7 +2,10 @@ import { useState } from 'react';
 import { useWorkbookStore } from '../../store/useWorkbookStore';
 import { useSelectionActions } from '../../grid/useSelectionActions';
 import { Modal } from '../ui/Modal';
-import type { CellValue } from '../../model/types';
+import type { CellValue, WorkflowOperation } from '../../model/types';
+import type { AppCommand } from '../../commands/types';
+
+type ConcatColumnsParams = Extract<WorkflowOperation, { type: 'concat_columns' }>['params'];
 
 function evaluatePreview(template: string, cells: Record<string, CellValue>, columnsByName: Map<string, string>): string {
   return template.replace(/\{([^{}]+)\}/g, (_match, name: string) => {
@@ -13,11 +16,18 @@ function evaluatePreview(template: string, cells: Record<string, CellValue>, col
   });
 }
 
-export function ConcatColumnsModal({ onClose }: { onClose: () => void }) {
+interface ConcatColumnsModalProps {
+  onClose: () => void;
+  onApply?: (command: AppCommand) => void;
+  initialParams?: ConcatColumnsParams;
+  onSaveDefinition?: (params: ConcatColumnsParams) => void;
+}
+
+export function ConcatColumnsModal({ onClose, onApply, initialParams, onSaveDefinition }: ConcatColumnsModalProps) {
   const { sheet, displayRows } = useSelectionActions();
   const dispatch = useWorkbookStore((s) => s.dispatch);
-  const [template, setTemplate] = useState('');
-  const [outputColumnName, setOutputColumnName] = useState('');
+  const [template, setTemplate] = useState(initialParams?.template ?? '');
+  const [outputColumnName, setOutputColumnName] = useState(initialParams?.output_column ?? '');
 
   function insertPlaceholder(name: string) {
     setTemplate((prev) => `${prev}{${name}}`);
@@ -25,7 +35,14 @@ export function ConcatColumnsModal({ onClose }: { onClose: () => void }) {
 
   function apply() {
     if (!template.trim() || !outputColumnName.trim()) return;
-    dispatch({ type: 'CONCAT_COLUMNS', payload: { sheetId: sheet.id, template, outputColumnName } });
+    if (onSaveDefinition) {
+      onSaveDefinition({ template, output_column: outputColumnName });
+      onClose();
+      return;
+    }
+    const command: AppCommand = { type: 'CONCAT_COLUMNS', payload: { sheetId: sheet.id, template, outputColumnName } };
+    if (onApply) onApply(command);
+    else dispatch(command);
     onClose();
   }
 
@@ -85,7 +102,7 @@ export function ConcatColumnsModal({ onClose }: { onClose: () => void }) {
           className="rounded px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-40"
           style={{ background: 'var(--color-accent)' }}
         >
-          Aplicar e registrar etapa
+          {onSaveDefinition ? 'Salvar alterações' : 'Aplicar e registrar etapa'}
         </button>
       </div>
     </Modal>

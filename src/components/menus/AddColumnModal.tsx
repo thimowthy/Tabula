@@ -3,7 +3,7 @@ import { useWorkbookStore } from '../../store/useWorkbookStore';
 import { useSelectionActions } from '../../grid/useSelectionActions';
 import { Modal } from '../ui/Modal';
 import { parseCellInput } from '../../model/format';
-import type { ColumnType } from '../../model/types';
+import type { ColumnType, WorkflowOperation } from '../../model/types';
 
 const TYPE_OPTIONS: [ColumnType, string][] = [
   ['text', 'Texto'],
@@ -12,15 +12,30 @@ const TYPE_OPTIONS: [ColumnType, string][] = [
   ['boolean', 'Booleano'],
 ];
 
-export function AddColumnModal({ onClose }: { onClose: () => void }) {
+type AddColumnParams = Extract<WorkflowOperation, { type: 'add_column' }>['params'];
+
+interface AddColumnModalProps {
+  onClose: () => void;
+  initialParams?: AddColumnParams;
+  onSaveDefinition?: (params: AddColumnParams) => void;
+}
+
+export function AddColumnModal({ onClose, initialParams, onSaveDefinition }: AddColumnModalProps) {
   const { sheet } = useSelectionActions();
   const dispatch = useWorkbookStore((s) => s.dispatch);
-  const [name, setName] = useState('');
-  const [columnType, setColumnType] = useState<ColumnType>('text');
-  const [defaultValue, setDefaultValue] = useState('');
+  const [name, setName] = useState(initialParams?.name ?? '');
+  const [columnType, setColumnType] = useState<ColumnType>(initialParams?.column_type ?? 'text');
+  const [defaultValue, setDefaultValue] = useState(
+    initialParams?.default_value !== undefined && initialParams?.default_value !== null ? String(initialParams.default_value) : '',
+  );
 
   function apply() {
     if (!name.trim()) return;
+    if (onSaveDefinition) {
+      onSaveDefinition({ name, column_type: columnType, default_value: parseCellInput(defaultValue, columnType) });
+      onClose();
+      return;
+    }
     dispatch({
       type: 'ADD_COLUMN_STEP',
       payload: {
@@ -80,7 +95,7 @@ export function AddColumnModal({ onClose }: { onClose: () => void }) {
           className="rounded px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-40"
           style={{ background: 'var(--color-accent)' }}
         >
-          Aplicar e registrar etapa
+          {onSaveDefinition ? 'Salvar alterações' : 'Aplicar e registrar etapa'}
         </button>
       </div>
     </Modal>

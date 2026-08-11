@@ -1,3 +1,5 @@
+import type { ConditionExpr } from './condition';
+
 export type ColumnType = 'text' | 'number' | 'date' | 'boolean';
 
 export type Alignment = 'left' | 'center' | 'right';
@@ -41,17 +43,19 @@ export interface RowRecord {
 
 /** Mirrors the backend's OperationSpec registry (engine/src/tabula_engine/definition/operations/builtin.py)
  * one-for-one, so a workflow recorded here is a valid Workflow spec the engine can run unmodified. */
-export type FilterOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains' | 'is_null' | 'not_null';
-
 export type MathOperator = 'add' | 'subtract' | 'multiply' | 'divide';
 
 export type WorkflowOperation =
   | { id: string; type: 'rename_column'; params: { column: string; new_name: string } }
   | { id: string; type: 'cast_column_type'; params: { column: string; target_type: ColumnType } }
   | { id: string; type: 'drop_columns'; params: { columns: string[] } }
-  | { id: string; type: 'filter_rows'; params: { column: string; operator: FilterOperator; value: CellValue } }
+  | { id: string; type: 'filter_rows'; params: { condition: ConditionExpr } }
   | { id: string; type: 'trim_whitespace'; params: { columns: string[] } }
-  | { id: string; type: 'fill_null'; params: { column: string; value: CellValue } }
+  | {
+      id: string;
+      type: 'fill_null';
+      params: { column: string; fill_type: 'constant' | 'column'; value: CellValue; source_column: string | null };
+    }
   | { id: string; type: 'cast_to_integer'; params: { column: string } }
   | { id: string; type: 'cast_to_float'; params: { column: string } }
   | { id: string; type: 'cast_to_datetime'; params: { column: string; format: string | null } }
@@ -84,7 +88,17 @@ export type WorkflowOperation =
   | { id: string; type: 'map_values'; params: { column: string; mapping: Record<string, CellValue> } }
   | { id: string; type: 'round'; params: { column: string; decimals: number } }
   | { id: string; type: 'deduplicate'; params: { columns: string[] } }
-  | { id: string; type: 'add_column'; params: { name: string; column_type: ColumnType; default_value: CellValue } };
+  | { id: string; type: 'add_column'; params: { name: string; column_type: ColumnType; default_value: CellValue } }
+  | { id: string; type: 'promote_header_row'; params: { row_index: number } }
+  | { id: string; type: 'fix_decimal_places'; params: { column: string; decimals: number } }
+  | {
+      id: string;
+      type: 'when';
+      params: {
+        cases: { condition: ConditionExpr; operations: WorkflowOperation[] }[];
+        default: WorkflowOperation[] | null;
+      };
+    };
 
 export interface SheetModel {
   id: string;

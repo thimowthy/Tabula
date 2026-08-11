@@ -2,13 +2,29 @@ import { useState } from 'react';
 import { useWorkbookStore } from '../../store/useWorkbookStore';
 import { useSelectionActions } from '../../grid/useSelectionActions';
 import { Modal } from '../ui/Modal';
+import type { AppCommand } from '../../commands/types';
+import type { WorkflowOperation } from '../../model/types';
 
-export function TrimWhitespaceModal({ onClose }: { onClose: () => void }) {
+type TrimWhitespaceParams = Extract<WorkflowOperation, { type: 'trim_whitespace' }>['params'];
+
+interface TrimWhitespaceModalProps {
+  onClose: () => void;
+  onApply?: (command: AppCommand) => void;
+  initialParams?: TrimWhitespaceParams;
+  onSaveDefinition?: (params: TrimWhitespaceParams) => void;
+}
+
+export function TrimWhitespaceModal({ onClose, onApply, initialParams, onSaveDefinition }: TrimWhitespaceModalProps) {
   const { sheet, rect, visibleColumns } = useSelectionActions();
   const dispatch = useWorkbookStore((s) => s.dispatch);
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(rect ? visibleColumns.slice(rect.colStart, rect.colEnd + 1).map((c) => c.id) : []),
-  );
+  const [selected, setSelected] = useState<Set<string>>(() => {
+    if (initialParams) {
+      return new Set(
+        initialParams.columns.map((name) => sheet.columns.find((c) => c.name === name)?.id).filter((id): id is string => !!id),
+      );
+    }
+    return new Set(rect ? visibleColumns.slice(rect.colStart, rect.colEnd + 1).map((c) => c.id) : []);
+  });
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -20,7 +36,15 @@ export function TrimWhitespaceModal({ onClose }: { onClose: () => void }) {
   }
 
   function apply() {
-    dispatch({ type: 'TRIM_WHITESPACE', payload: { sheetId: sheet.id, columnIds: Array.from(selected) } });
+    if (onSaveDefinition) {
+      const columns = sheet.columns.filter((c) => selected.has(c.id)).map((c) => c.name);
+      onSaveDefinition({ columns });
+      onClose();
+      return;
+    }
+    const command: AppCommand = { type: 'TRIM_WHITESPACE', payload: { sheetId: sheet.id, columnIds: Array.from(selected) } };
+    if (onApply) onApply(command);
+    else dispatch(command);
     onClose();
   }
 
@@ -44,7 +68,7 @@ export function TrimWhitespaceModal({ onClose }: { onClose: () => void }) {
         className="mt-3 rounded px-3 py-1.5 text-[13px] font-medium text-white"
         style={{ background: 'var(--color-accent)' }}
       >
-        Aplicar e registrar etapa
+        {onSaveDefinition ? 'Salvar alterações' : 'Aplicar e registrar etapa'}
       </button>
     </Modal>
   );

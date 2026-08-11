@@ -2,21 +2,43 @@ import { useState } from 'react';
 import { useWorkbookStore } from '../../store/useWorkbookStore';
 import { useSelectionActions } from '../../grid/useSelectionActions';
 import { Modal } from '../ui/Modal';
+import type { AppCommand } from '../../commands/types';
+import type { WorkflowOperation } from '../../model/types';
 
-export function ExtractModal({ onClose }: { onClose: () => void }) {
+type ExtractParams = Extract<WorkflowOperation, { type: 'extract' }>['params'];
+
+interface ExtractModalProps {
+  onClose: () => void;
+  onApply?: (command: AppCommand) => void;
+  initialParams?: ExtractParams;
+  onSaveDefinition?: (params: ExtractParams) => void;
+}
+
+export function ExtractModal({ onClose, onApply, initialParams, onSaveDefinition }: ExtractModalProps) {
   const { sheet, selectedColumnId } = useSelectionActions();
   const dispatch = useWorkbookStore((s) => s.dispatch);
-  const [columnId, setColumnId] = useState(selectedColumnId ?? sheet.columns[0]?.id ?? '');
-  const [pattern, setPattern] = useState('');
-  const [group, setGroup] = useState(1);
-  const [outputColumnName, setOutputColumnName] = useState('');
+  const [columnId, setColumnId] = useState(
+    () => sheet.columns.find((c) => c.name === initialParams?.column)?.id ?? selectedColumnId ?? sheet.columns[0]?.id ?? '',
+  );
+  const [pattern, setPattern] = useState(initialParams?.pattern ?? '');
+  const [group, setGroup] = useState(initialParams?.group ?? 1);
+  const [outputColumnName, setOutputColumnName] = useState(initialParams?.output_column ?? '');
 
   function apply() {
     if (!pattern) return;
-    dispatch({
+    if (onSaveDefinition) {
+      const column = sheet.columns.find((c) => c.id === columnId);
+      if (!column) return;
+      onSaveDefinition({ column: column.name, pattern, group, output_column: outputColumnName.trim() || null });
+      onClose();
+      return;
+    }
+    const command: AppCommand = {
       type: 'EXTRACT_TEXT',
       payload: { sheetId: sheet.id, columnId, pattern, group, outputColumnName: outputColumnName.trim() || undefined },
-    });
+    };
+    if (onApply) onApply(command);
+    else dispatch(command);
     onClose();
   }
 
@@ -82,7 +104,7 @@ export function ExtractModal({ onClose }: { onClose: () => void }) {
           className="rounded px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-40"
           style={{ background: 'var(--color-accent)' }}
         >
-          Aplicar e registrar etapa
+          {onSaveDefinition ? 'Salvar alterações' : 'Aplicar e registrar etapa'}
         </button>
       </div>
     </Modal>

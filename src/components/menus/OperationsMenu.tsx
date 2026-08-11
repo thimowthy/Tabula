@@ -16,6 +16,9 @@ import { ExtractModal } from './ExtractModal';
 import { MapValuesModal } from './MapValuesModal';
 import { RoundModal } from './RoundModal';
 import { DeduplicateModal } from './DeduplicateModal';
+import { PromoteHeaderRowModal } from './PromoteHeaderRowModal';
+import { FixDecimalPlacesModal } from './FixDecimalPlacesModal';
+import { WhenModal } from './WhenModal';
 
 type OperationModal =
   | 'filterStep'
@@ -24,15 +27,18 @@ type OperationModal =
   | 'fillConstant'
   | 'addColumn'
   | 'dedupe'
+  | 'promoteHeader'
   | 'castType'
   | 'split'
   | 'concat'
   | 'math'
   | 'round'
+  | 'fixDecimals'
   | 'pad'
   | 'replace'
   | 'extract'
-  | 'mapValues';
+  | 'mapValues'
+  | 'when';
 
 /** Declarative, workflow-recording operations — distinct from Dados, which
  * covers direct spreadsheet editing (sort, view filters, insert/delete). */
@@ -49,6 +55,7 @@ export function OperationsMenu() {
           </span>
         }
         items={[
+          { label: 'Definir linha de cabeçalho…', onSelect: () => setModal('promoteHeader') },
           { label: 'Filtrar linhas…', onSelect: () => setModal('filterStep') },
           { label: 'Remover espaços…', onSelect: () => setModal('trim') },
           { label: 'Preencher vazios…', onSelect: () => setModal('fillNull') },
@@ -61,13 +68,17 @@ export function OperationsMenu() {
           { label: 'Concatenar colunas…', onSelect: () => setModal('concat') },
           { label: 'Operação matemática…', onSelect: () => setModal('math') },
           { label: 'Arredondar…', onSelect: () => setModal('round') },
+          { label: 'Fixar casas decimais…', onSelect: () => setModal('fixDecimals') },
           { label: 'Preencher tamanho fixo…', onSelect: () => setModal('pad') },
           { label: '', separator: true },
           { label: 'Substituir texto (regex)…', onSelect: () => setModal('replace') },
           { label: 'Extrair texto (regex)…', onSelect: () => setModal('extract') },
           { label: 'Substituir por de-para…', onSelect: () => setModal('mapValues') },
+          { label: '', separator: true },
+          { label: 'Condicional (se / senão)…', onSelect: () => setModal('when') },
         ]}
       />
+      {modal === 'promoteHeader' && <PromoteHeaderRowModal onClose={() => setModal(null)} />}
       {modal === 'filterStep' && <FilterStepModal onClose={() => setModal(null)} />}
       {modal === 'trim' && <TrimWhitespaceModal onClose={() => setModal(null)} />}
       {modal === 'fillNull' && <FillNullModal onClose={() => setModal(null)} />}
@@ -79,10 +90,12 @@ export function OperationsMenu() {
       {modal === 'concat' && <ConcatColumnsModal onClose={() => setModal(null)} />}
       {modal === 'math' && <MathOperationModal onClose={() => setModal(null)} />}
       {modal === 'round' && <RoundModal onClose={() => setModal(null)} />}
+      {modal === 'fixDecimals' && <FixDecimalPlacesModal onClose={() => setModal(null)} />}
       {modal === 'pad' && <PadStringModal onClose={() => setModal(null)} />}
       {modal === 'replace' && <ReplaceStepModal onClose={() => setModal(null)} />}
       {modal === 'extract' && <ExtractModal onClose={() => setModal(null)} />}
       {modal === 'mapValues' && <MapValuesModal onClose={() => setModal(null)} />}
+      {modal === 'when' && <WhenModal onClose={() => setModal(null)} />}
     </>
   );
 }

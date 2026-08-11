@@ -1,4 +1,5 @@
-import type { CellStyle, CellValue, ColumnType, FilterOperator, MathOperator, NumberFormat, SheetModel } from '../model/types';
+import type { CellStyle, CellValue, ColumnType, MathOperator, NumberFormat, SheetModel } from '../model/types';
+import type { ConditionExpr } from '../model/condition';
 
 interface CellEdit {
   rowId: string;
@@ -39,10 +40,19 @@ export type AppCommand =
   | { type: 'REORDER_SHEETS'; payload: { orderedSheetIds: string[] } }
   | { type: 'CLEAR_SHEET'; payload: { sheetId: string } }
   | { type: 'TRIM_WHITESPACE'; payload: { sheetId: string; columnIds: string[] } }
-  | { type: 'FILL_NULL'; payload: { sheetId: string; columnId: string; value: CellValue } }
+  | {
+      type: 'FILL_NULL';
+      payload: {
+        sheetId: string;
+        columnId: string;
+        fillType: 'constant' | 'column';
+        value: CellValue;
+        sourceColumnId: string | null;
+      };
+    }
   | {
       type: 'APPLY_FILTER_STEP';
-      payload: { sheetId: string; columnId: string; operator: FilterOperator; value: CellValue };
+      payload: { sheetId: string; condition: ConditionExpr };
     }
   | { type: 'CAST_TO_INTEGER'; payload: { sheetId: string; columnId: string } }
   | { type: 'CAST_TO_FLOAT'; payload: { sheetId: string; columnId: string } }
@@ -83,6 +93,35 @@ export type AppCommand =
   | {
       type: 'ADD_COLUMN_STEP';
       payload: { sheetId: string; name: string; columnType: ColumnType; defaultValue: CellValue };
+    }
+  | { type: 'PROMOTE_HEADER_ROW'; payload: { sheetId: string; rowId: string } }
+  | { type: 'FIX_DECIMAL_PLACES'; payload: { sheetId: string; columnId: string; decimals: number } }
+  | {
+      /** Branch operations are live commands (id-keyed, ready to apply) — the
+       * SAME commands a curated modal would dispatch on its own. Composing
+       * with existing commands (rather than a separate name-keyed shape)
+       * means running a branch is just replaying `applyCommand` in a loop;
+       * the name-keyed WorkflowOperation recorded for each branch is
+       * harvested from the *ordinary* workflowSteps each of those commands
+       * already appends as a side effect of applying normally. */
+      type: 'APPLY_WHEN';
+      payload: {
+        sheetId: string;
+        cases: { condition: ConditionExpr; operations: AppCommand[] }[];
+        default: AppCommand[] | null;
+      };
+    }
+  | {
+      /** Rewrites an already-recorded step's params (and, optionally, its
+       * type — e.g. editing a "converter tipo" step can switch between
+       * cast_to_integer/float/datetime, which are different operation_types
+       * sharing one modal) in place, at the same position in workflowSteps —
+       * used by "click a step to edit it". Does NOT touch rows/columns: this
+       * sheet's already-computed data doesn't reflect the edit (only a fresh
+       * replay of the corrected workflow would). `params` is name-keyed,
+       * same shape as the matching WorkflowOperation variant's `params`. */
+      type: 'UPDATE_WORKFLOW_STEP';
+      payload: { sheetId: string; stepId: string; operationType?: string; params: Record<string, unknown> };
     }
   | { type: 'IMPORT_SHEETS'; payload: { sheets: SheetModel[] } };
 

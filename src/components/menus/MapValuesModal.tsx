@@ -3,18 +3,37 @@ import { useWorkbookStore } from '../../store/useWorkbookStore';
 import { useSelectionActions } from '../../grid/useSelectionActions';
 import { Modal } from '../ui/Modal';
 import { parseCellInput } from '../../model/format';
-import type { CellValue } from '../../model/types';
+import type { CellValue, WorkflowOperation } from '../../model/types';
+import type { AppCommand } from '../../commands/types';
 
 interface Pair {
   from: string;
   to: string;
 }
 
-export function MapValuesModal({ onClose }: { onClose: () => void }) {
+type MapValuesParams = Extract<WorkflowOperation, { type: 'map_values' }>['params'];
+
+interface MapValuesModalProps {
+  onClose: () => void;
+  onApply?: (command: AppCommand) => void;
+  initialParams?: MapValuesParams;
+  onSaveDefinition?: (params: MapValuesParams) => void;
+}
+
+export function MapValuesModal({ onClose, onApply, initialParams, onSaveDefinition }: MapValuesModalProps) {
   const { sheet, selectedColumnId } = useSelectionActions();
   const dispatch = useWorkbookStore((s) => s.dispatch);
-  const [columnId, setColumnId] = useState(selectedColumnId ?? sheet.columns[0]?.id ?? '');
-  const [pairs, setPairs] = useState<Pair[]>([{ from: '', to: '' }]);
+  const [columnId, setColumnId] = useState(
+    () => sheet.columns.find((c) => c.name === initialParams?.column)?.id ?? selectedColumnId ?? sheet.columns[0]?.id ?? '',
+  );
+  const [pairs, setPairs] = useState<Pair[]>(() => {
+    if (!initialParams) return [{ from: '', to: '' }];
+    const entries = Object.entries(initialParams.mapping).map(([from, to]) => ({
+      from,
+      to: to === null || to === undefined ? '' : String(to),
+    }));
+    return entries.length > 0 ? entries : [{ from: '', to: '' }];
+  });
 
   const column = sheet.columns.find((c) => c.id === columnId);
 
@@ -30,7 +49,14 @@ export function MapValuesModal({ onClose }: { onClose: () => void }) {
       mapping[p.from] = parseCellInput(p.to, column.type);
     }
     if (Object.keys(mapping).length === 0) return;
-    dispatch({ type: 'MAP_VALUES', payload: { sheetId: sheet.id, columnId, mapping } });
+    if (onSaveDefinition) {
+      onSaveDefinition({ column: column.name, mapping });
+      onClose();
+      return;
+    }
+    const command: AppCommand = { type: 'MAP_VALUES', payload: { sheetId: sheet.id, columnId, mapping } };
+    if (onApply) onApply(command);
+    else dispatch(command);
     onClose();
   }
 
@@ -99,7 +125,7 @@ export function MapValuesModal({ onClose }: { onClose: () => void }) {
           className="rounded px-3 py-1.5 text-[13px] font-medium text-white"
           style={{ background: 'var(--color-accent)' }}
         >
-          Aplicar e registrar etapa
+          {onSaveDefinition ? 'Salvar alterações' : 'Aplicar e registrar etapa'}
         </button>
       </div>
     </Modal>

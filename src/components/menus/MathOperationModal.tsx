@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useWorkbookStore } from '../../store/useWorkbookStore';
 import { useSelectionActions } from '../../grid/useSelectionActions';
 import { Modal } from '../ui/Modal';
-import type { MathOperator } from '../../model/types';
+import type { MathOperator, WorkflowOperation } from '../../model/types';
+import type { AppCommand } from '../../commands/types';
 
 const OPERATORS: { value: MathOperator; label: string }[] = [
   { value: 'add', label: '+ somar' },
@@ -11,19 +12,52 @@ const OPERATORS: { value: MathOperator; label: string }[] = [
   { value: 'divide', label: '÷ dividir' },
 ];
 
-export function MathOperationModal({ onClose }: { onClose: () => void }) {
+type MathOperationParams = Extract<WorkflowOperation, { type: 'math_operation' }>['params'];
+
+interface MathOperationModalProps {
+  onClose: () => void;
+  onApply?: (command: AppCommand) => void;
+  initialParams?: MathOperationParams;
+  onSaveDefinition?: (params: MathOperationParams) => void;
+}
+
+export function MathOperationModal({ onClose, onApply, initialParams, onSaveDefinition }: MathOperationModalProps) {
   const { sheet, selectedColumnId } = useSelectionActions();
   const dispatch = useWorkbookStore((s) => s.dispatch);
-  const [columnId, setColumnId] = useState(selectedColumnId ?? sheet.columns[0]?.id ?? '');
-  const [operator, setOperator] = useState<MathOperator>('add');
-  const [operandType, setOperandType] = useState<'constant' | 'column'>('constant');
-  const [constantValue, setConstantValue] = useState('0');
-  const [operandColumnId, setOperandColumnId] = useState(sheet.columns[1]?.id ?? sheet.columns[0]?.id ?? '');
-  const [outputColumnName, setOutputColumnName] = useState('');
+  const [columnId, setColumnId] = useState(
+    () => sheet.columns.find((c) => c.name === initialParams?.column)?.id ?? selectedColumnId ?? sheet.columns[0]?.id ?? '',
+  );
+  const [operator, setOperator] = useState<MathOperator>(initialParams?.operator ?? 'add');
+  const [operandType, setOperandType] = useState<'constant' | 'column'>(initialParams?.operand_type ?? 'constant');
+  const [constantValue, setConstantValue] = useState(
+    initialParams?.operand_type === 'constant' ? String(initialParams.operand) : '0',
+  );
+  const [operandColumnId, setOperandColumnId] = useState(() => {
+    if (initialParams?.operand_type === 'column') {
+      const found = sheet.columns.find((c) => c.name === initialParams.operand)?.id;
+      if (found) return found;
+    }
+    return sheet.columns[1]?.id ?? sheet.columns[0]?.id ?? '';
+  });
+  const [outputColumnName, setOutputColumnName] = useState(initialParams?.output_column ?? '');
 
   function apply() {
+    if (onSaveDefinition) {
+      const column = sheet.columns.find((c) => c.id === columnId);
+      if (!column) return;
+      onSaveDefinition({
+        column: column.name,
+        operator,
+        operand_type: operandType,
+        operand:
+          operandType === 'constant' ? Number(constantValue) || 0 : (sheet.columns.find((c) => c.id === operandColumnId)?.name ?? ''),
+        output_column: outputColumnName.trim() || null,
+      });
+      onClose();
+      return;
+    }
     const operand = operandType === 'constant' ? Number(constantValue) || 0 : operandColumnId;
-    dispatch({
+    const command: AppCommand = {
       type: 'APPLY_MATH',
       payload: {
         sheetId: sheet.id,
@@ -33,7 +67,9 @@ export function MathOperationModal({ onClose }: { onClose: () => void }) {
         operand,
         outputColumnName: outputColumnName.trim() || undefined,
       },
-    });
+    };
+    if (onApply) onApply(command);
+    else dispatch(command);
     onClose();
   }
 
@@ -132,7 +168,7 @@ export function MathOperationModal({ onClose }: { onClose: () => void }) {
           className="rounded px-3 py-1.5 text-[13px] font-medium text-white"
           style={{ background: 'var(--color-accent)' }}
         >
-          Aplicar e registrar etapa
+          {onSaveDefinition ? 'Salvar alterações' : 'Aplicar e registrar etapa'}
         </button>
       </div>
     </Modal>

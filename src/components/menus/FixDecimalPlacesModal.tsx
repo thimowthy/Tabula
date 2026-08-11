@@ -2,50 +2,46 @@ import { useState } from 'react';
 import { useWorkbookStore } from '../../store/useWorkbookStore';
 import { useSelectionActions } from '../../grid/useSelectionActions';
 import { Modal } from '../ui/Modal';
-import { parseCellInput } from '../../model/format';
 import type { AppCommand } from '../../commands/types';
 import type { WorkflowOperation } from '../../model/types';
 
-type FillConstantParams = Extract<WorkflowOperation, { type: 'fill_constant' }>['params'];
+type FixDecimalPlacesParams = Extract<WorkflowOperation, { type: 'fix_decimal_places' }>['params'];
 
-interface FillConstantModalProps {
+interface FixDecimalPlacesModalProps {
   onClose: () => void;
   onApply?: (command: AppCommand) => void;
-  initialParams?: FillConstantParams;
-  onSaveDefinition?: (params: FillConstantParams) => void;
+  initialParams?: FixDecimalPlacesParams;
+  onSaveDefinition?: (params: FixDecimalPlacesParams) => void;
 }
 
-export function FillConstantModal({ onClose, onApply, initialParams, onSaveDefinition }: FillConstantModalProps) {
+export function FixDecimalPlacesModal({ onClose, onApply, initialParams, onSaveDefinition }: FixDecimalPlacesModalProps) {
   const { sheet, selectedColumnId } = useSelectionActions();
   const dispatch = useWorkbookStore((s) => s.dispatch);
   const [columnId, setColumnId] = useState(
     () => sheet.columns.find((c) => c.name === initialParams?.column)?.id ?? selectedColumnId ?? sheet.columns[0]?.id ?? '',
   );
-  const [value, setValue] = useState(initialParams?.value !== undefined && initialParams?.value !== null ? String(initialParams.value) : '');
-
-  const column = sheet.columns.find((c) => c.id === columnId);
+  const [decimals, setDecimals] = useState(initialParams?.decimals ?? 2);
 
   function apply() {
-    if (!column) return;
     if (onSaveDefinition) {
-      onSaveDefinition({ column: column.name, value: parseCellInput(value, column.type) });
+      const column = sheet.columns.find((c) => c.id === columnId);
+      if (!column) return;
+      onSaveDefinition({ column: column.name, decimals });
       onClose();
       return;
     }
-    const command: AppCommand = {
-      type: 'FILL_CONSTANT',
-      payload: { sheetId: sheet.id, columnId, value: parseCellInput(value, column.type) },
-    };
+    const command: AppCommand = { type: 'FIX_DECIMAL_PLACES', payload: { sheetId: sheet.id, columnId, decimals } };
     if (onApply) onApply(command);
     else dispatch(command);
     onClose();
   }
 
   return (
-    <Modal title="Etapa do workflow: preencher com constante" onClose={onClose} width={360}>
+    <Modal title="Etapa do workflow: fixar casas decimais" onClose={onClose} width={360}>
       <p className="mb-3 text-[12px] text-[var(--color-text-subtle)]">
-        Sobrescreve <strong>toda</strong> a coluna com o valor informado — diferente de "preencher vazios", que só
-        toca células em branco.
+        Formata o número com exatamente essa quantidade de casas após a vírgula, completando com zeros quando
+        necessário. A coluna vira texto para preservar os zeros (diferente de "Arredondar", que mantém a coluna
+        numérica).
       </p>
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-[12px] text-[var(--color-text-subtle)]">
@@ -64,12 +60,15 @@ export function FillConstantModal({ onClose, onApply, initialParams, onSaveDefin
           </select>
         </label>
         <label className="flex flex-col gap-1 text-[12px] text-[var(--color-text-subtle)]">
-          Valor constante
+          Casas decimais
           <input
+            type="number"
+            min={0}
+            max={10}
             className="rounded border px-2 py-1.5 text-[13px]"
             style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
+            value={decimals}
+            onChange={(e) => setDecimals(Math.max(0, Number(e.target.value) || 0))}
           />
         </label>
         <button

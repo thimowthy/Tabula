@@ -29,7 +29,7 @@ export function formatCellValue(value: CellValue, column: ColumnDef): string {
         maximumFractionDigits: decimals,
       });
     }
-    return String(num);
+    return String(num).replace('.', ',');
   }
 
   if (column.type === 'date') {

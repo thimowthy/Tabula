@@ -2,14 +2,25 @@ import { useState } from 'react';
 import { useWorkbookStore } from '../../store/useWorkbookStore';
 import { useSelectionActions } from '../../grid/useSelectionActions';
 import { Modal } from '../ui/Modal';
+import type { WorkflowOperation } from '../../model/types';
 
-export function SplitColumnModal({ onClose }: { onClose: () => void }) {
+type SplitColumnParams = Extract<WorkflowOperation, { type: 'split_column' }>['params'];
+
+interface SplitColumnModalProps {
+  onClose: () => void;
+  initialParams?: SplitColumnParams;
+  onSaveDefinition?: (params: SplitColumnParams) => void;
+}
+
+export function SplitColumnModal({ onClose, initialParams, onSaveDefinition }: SplitColumnModalProps) {
   const { sheet, selectedColumnId } = useSelectionActions();
   const dispatch = useWorkbookStore((s) => s.dispatch);
-  const [columnId, setColumnId] = useState(selectedColumnId ?? sheet.columns[0]?.id ?? '');
-  const [delimiter, setDelimiter] = useState(',');
-  const [names, setNames] = useState<string[]>(['parte 1', 'parte 2']);
-  const [keepOriginal, setKeepOriginal] = useState(false);
+  const [columnId, setColumnId] = useState(
+    () => sheet.columns.find((c) => c.name === initialParams?.column)?.id ?? selectedColumnId ?? sheet.columns[0]?.id ?? '',
+  );
+  const [delimiter, setDelimiter] = useState(initialParams?.delimiter ?? ',');
+  const [names, setNames] = useState<string[]>(initialParams?.into ?? ['parte 1', 'parte 2']);
+  const [keepOriginal, setKeepOriginal] = useState(initialParams?.keep_original ?? false);
 
   function updateName(i: number, value: string) {
     setNames((prev) => prev.map((n, idx) => (idx === i ? value : n)));
@@ -18,6 +29,13 @@ export function SplitColumnModal({ onClose }: { onClose: () => void }) {
   function apply() {
     const newNames = names.map((n) => n.trim()).filter(Boolean);
     if (newNames.length === 0) return;
+    if (onSaveDefinition) {
+      const column = sheet.columns.find((c) => c.id === columnId);
+      if (!column) return;
+      onSaveDefinition({ column: column.name, delimiter, into: newNames, keep_original: keepOriginal });
+      onClose();
+      return;
+    }
     dispatch({
       type: 'SPLIT_COLUMN',
       payload: { sheetId: sheet.id, columnId, delimiter, newNames, keepOriginal },
@@ -95,7 +113,7 @@ export function SplitColumnModal({ onClose }: { onClose: () => void }) {
           className="rounded px-3 py-1.5 text-[13px] font-medium text-white"
           style={{ background: 'var(--color-accent)' }}
         >
-          Aplicar e registrar etapa
+          {onSaveDefinition ? 'Salvar alterações' : 'Aplicar e registrar etapa'}
         </button>
       </div>
     </Modal>

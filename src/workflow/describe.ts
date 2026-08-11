@@ -1,4 +1,5 @@
 import type { ColumnType, WorkflowOperation } from '../model/types';
+import { isConditionGroup, CONDITION_OPERATOR_LABEL, conditionOperatorNeedsValue, type ConditionExpr } from '../model/condition';
 
 const TYPE_LABEL: Record<ColumnType, string> = {
   text: 'Texto',
@@ -7,17 +8,17 @@ const TYPE_LABEL: Record<ColumnType, string> = {
   boolean: 'Booleano',
 };
 
-const OPERATOR_LABEL: Record<string, string> = {
-  eq: 'igual a',
-  neq: 'diferente de',
-  gt: 'maior que',
-  gte: 'maior ou igual a',
-  lt: 'menor que',
-  lte: 'menor ou igual a',
-  contains: 'contém',
-  is_null: 'está vazio',
-  not_null: 'não está vazio',
-};
+/** Shared by `filter_rows` and `when` — the one place a condition tree
+ * becomes human-readable text. */
+export function describeCondition(condition: ConditionExpr): string {
+  if (isConditionGroup(condition)) {
+    const parts = condition.conditions.map((c) => `(${describeCondition(c)})`);
+    return parts.join(condition.logic === 'and' ? ' E ' : ' OU ');
+  }
+  const opLabel = CONDITION_OPERATOR_LABEL[condition.operator] ?? condition.operator;
+  const needsValue = conditionOperatorNeedsValue(condition.operator);
+  return `"${condition.column}" ${opLabel}${needsValue ? ` "${condition.value ?? ''}"` : ''}`;
+}
 
 const MATH_LABEL: Record<string, string> = {
   add: '+',
@@ -48,6 +49,9 @@ export const OPERATION_BADGE: Record<WorkflowOperation['type'], string> = {
   round: 'ROUND',
   deduplicate: 'DEDUPE',
   add_column: 'COL+',
+  promote_header_row: 'HEAD',
+  fix_decimal_places: 'FIXDEC',
+  when: 'SE',
 };
 
 export function describeOperation(op: WorkflowOperation): string {
@@ -58,15 +62,14 @@ export function describeOperation(op: WorkflowOperation): string {
       return `Definir tipo de "${op.params.column}" como ${TYPE_LABEL[op.params.target_type]}`;
     case 'drop_columns':
       return `Remover coluna(s): ${op.params.columns.join(', ')}`;
-    case 'filter_rows': {
-      const opLabel = OPERATOR_LABEL[op.params.operator] ?? op.params.operator;
-      const needsValue = op.params.operator !== 'is_null' && op.params.operator !== 'not_null';
-      return `Manter linhas onde "${op.params.column}" ${opLabel}${needsValue ? ` "${op.params.value ?? ''}"` : ''}`;
-    }
+    case 'filter_rows':
+      return `Manter linhas onde ${describeCondition(op.params.condition)}`;
     case 'trim_whitespace':
       return `Remover espaços em excesso: ${op.params.columns.length ? op.params.columns.join(', ') : 'todas as colunas de texto'}`;
     case 'fill_null':
-      return `Preencher vazios de "${op.params.column}" com "${op.params.value ?? ''}"`;
+      return op.params.fill_type === 'column'
+        ? `Preencher vazios de "${op.params.column}" com o valor de "${op.params.source_column ?? ''}"`
+        : `Preencher vazios de "${op.params.column}" com "${op.params.value ?? ''}"`;
     case 'cast_to_integer':
       return `Converter "${op.params.column}" para número inteiro`;
     case 'cast_to_float':
@@ -108,6 +111,17 @@ export function describeOperation(op: WorkflowOperation): string {
         : 'Remover linhas duplicadas (todas as colunas)';
     case 'add_column':
       return `Adicionar coluna "${op.params.name}" (${TYPE_LABEL[op.params.column_type]})${op.params.default_value !== null ? ` com valor padrão "${op.params.default_value}"` : ''}`;
+    case 'promote_header_row':
+      return `Usar linha ${op.params.row_index + 1} como cabeçalho (remove as linhas até ela)`;
+    case 'fix_decimal_places':
+      return `Fixar "${op.params.column}" com ${op.params.decimals} casa(s) decimal(is)`;
+    case 'when': {
+      const casesDesc = op.params.cases
+        .map((c, i) => `caso ${i + 1} (${describeCondition(c.condition)}): ${c.operations.length} operação(ões)`)
+        .join('; ');
+      const defaultDesc = op.params.default ? `; senão: ${op.params.default.length} operação(ões)` : '';
+      return `Condicional — ${casesDesc}${defaultDesc}`;
+    }
     default:
       return 'Operação';
   }

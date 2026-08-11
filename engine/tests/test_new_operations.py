@@ -166,3 +166,63 @@ def test_pad_string_keeps_column_as_text():
     )
     assert [r["cep"] for r in outcome.table.rows] == ["00123", "00004"]
     assert outcome.table.columns[0].type == ColumnType.TEXT
+
+
+def test_promote_header_row_renames_columns_and_drops_rows_above():
+    table = _table(
+        [CanonicalColumn(name="col_0", type=ColumnType.TEXT), CanonicalColumn(name="col_1", type=ColumnType.TEXT)],
+        [
+            {"col_0": "Relatório mensal", "col_1": None},
+            {"col_0": "nome", "col_1": "idade"},
+            {"col_0": "Ana", "col_1": "30"},
+            {"col_0": "Bruno", "col_1": "25"},
+        ],
+    )
+    outcome = PolarsExecutor().run(
+        table, [Step(operation_type="promote_header_row", params={"row_index": 1})]
+    )
+    assert outcome.table.column_names() == ["nome", "idade"]
+    assert outcome.table.rows == [{"nome": "Ana", "idade": "30"}, {"nome": "Bruno", "idade": "25"}]
+
+
+def test_fill_null_from_another_column():
+    table = _table(
+        [CanonicalColumn(name="apelido", type=ColumnType.TEXT), CanonicalColumn(name="nome", type=ColumnType.TEXT)],
+        [{"apelido": None, "nome": "Ana"}, {"apelido": "Bru", "nome": "Bruno"}],
+    )
+    outcome = PolarsExecutor().run(
+        table,
+        [
+            Step(
+                operation_type="fill_null",
+                params={"column": "apelido", "fill_type": "column", "source_column": "nome"},
+            )
+        ],
+    )
+    assert [r["apelido"] for r in outcome.table.rows] == ["Ana", "Bru"]
+
+
+def test_fill_null_constant_still_works_without_fill_type():
+    table = _table([CanonicalColumn(name="status", type=ColumnType.TEXT)], [{"status": None}])
+    outcome = PolarsExecutor().run(
+        table, [Step(operation_type="fill_null", params={"column": "status", "value": "pendente"})]
+    )
+    assert outcome.table.rows[0]["status"] == "pendente"
+
+
+def test_fix_decimal_places_pads_and_uses_comma():
+    table = _table([CanonicalColumn(name="preco", type=ColumnType.NUMBER)], [{"preco": 5.0}, {"preco": 3.14159}])
+    outcome = PolarsExecutor().run(
+        table, [Step(operation_type="fix_decimal_places", params={"column": "preco", "decimals": 2})]
+    )
+    assert [r["preco"] for r in outcome.table.rows] == ["5,00", "3,14"]
+    assert outcome.table.columns[0].type == ColumnType.TEXT
+
+
+def test_promote_header_row_out_of_range_is_a_noop_warning():
+    table = _table([CanonicalColumn(name="a", type=ColumnType.TEXT)], [{"a": "1"}])
+    outcome = PolarsExecutor().run(table, [Step(operation_type="promote_header_row", params={"row_index": 5})])
+    assert outcome.table.column_names() == ["a"]
+    assert outcome.table.rows == [{"a": "1"}]
+    assert len(outcome.issues) == 1
+    assert outcome.issues[0].severity == "warning"

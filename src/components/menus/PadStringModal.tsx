@@ -2,20 +2,42 @@ import { useState } from 'react';
 import { useWorkbookStore } from '../../store/useWorkbookStore';
 import { useSelectionActions } from '../../grid/useSelectionActions';
 import { Modal } from '../ui/Modal';
+import type { AppCommand } from '../../commands/types';
+import type { WorkflowOperation } from '../../model/types';
 
-export function PadStringModal({ onClose }: { onClose: () => void }) {
+type PadStringParams = Extract<WorkflowOperation, { type: 'pad_string' }>['params'];
+
+interface PadStringModalProps {
+  onClose: () => void;
+  onApply?: (command: AppCommand) => void;
+  initialParams?: PadStringParams;
+  onSaveDefinition?: (params: PadStringParams) => void;
+}
+
+export function PadStringModal({ onClose, onApply, initialParams, onSaveDefinition }: PadStringModalProps) {
   const { sheet, selectedColumnId } = useSelectionActions();
   const dispatch = useWorkbookStore((s) => s.dispatch);
-  const [columnId, setColumnId] = useState(selectedColumnId ?? sheet.columns[0]?.id ?? '');
-  const [length, setLength] = useState(5);
-  const [padChar, setPadChar] = useState('0');
-  const [side, setSide] = useState<'left' | 'right'>('left');
+  const [columnId, setColumnId] = useState(
+    () => sheet.columns.find((c) => c.name === initialParams?.column)?.id ?? selectedColumnId ?? sheet.columns[0]?.id ?? '',
+  );
+  const [length, setLength] = useState(initialParams?.length ?? 5);
+  const [padChar, setPadChar] = useState(initialParams?.pad_char ?? '0');
+  const [side, setSide] = useState<'left' | 'right'>(initialParams?.side ?? 'left');
 
   function apply() {
-    dispatch({
+    if (onSaveDefinition) {
+      const column = sheet.columns.find((c) => c.id === columnId);
+      if (!column) return;
+      onSaveDefinition({ column: column.name, length, pad_char: padChar || '0', side });
+      onClose();
+      return;
+    }
+    const command: AppCommand = {
       type: 'PAD_STRING',
       payload: { sheetId: sheet.id, columnId, length, padChar: padChar || '0', side },
-    });
+    };
+    if (onApply) onApply(command);
+    else dispatch(command);
     onClose();
   }
 
@@ -94,7 +116,7 @@ export function PadStringModal({ onClose }: { onClose: () => void }) {
           className="rounded px-3 py-1.5 text-[13px] font-medium text-white"
           style={{ background: 'var(--color-accent)' }}
         >
-          Aplicar e registrar etapa
+          {onSaveDefinition ? 'Salvar alterações' : 'Aplicar e registrar etapa'}
         </button>
       </div>
     </Modal>

@@ -1,10 +1,31 @@
 import { v4 as uuid } from 'uuid';
 import { createColumn, createEmptySheet, createRow } from '../model/factory';
 import { getSheet, updateSheet } from '../model/ops';
-import { evaluateFilter } from '../model/filterEval';
-import type { CellValue, ColumnDef, RowRecord, SheetModel, WorkbookModel } from '../model/types';
+import { evaluateCondition } from '../model/filterEval';
+import { nameCondition, type ConditionExpr } from '../model/condition';
+import type { CellValue, ColumnDef, RowRecord, SheetModel, WorkbookModel, WorkflowOperation } from '../model/types';
 import { createWorkflowStep } from '../workflow/operations';
 import type { AppCommand } from './types';
+
+interface WhenBranchResult {
+  sheet: SheetModel;
+  /** The name-keyed WorkflowOperation each command appended to workflowSteps
+   * as an ordinary side effect of applying it — harvesting these (rather than
+   * translating id-keyed commands back to name-keyed steps by hand) is what
+   * lets a `when` branch record exactly the same step shape a standalone
+   * "Aplicar" click would have produced. */
+  recordedOperations: WorkflowOperation[];
+}
+
+function runWhenBranch(workbook: WorkbookModel, sheetId: string, commands: AppCommand[]): WhenBranchResult {
+  const stepCountBefore = getSheet(workbook, sheetId).workflowSteps.length;
+  let current = workbook;
+  for (const cmd of commands) {
+    current = applyCommand(current, cmd).workbook;
+  }
+  const sheet = getSheet(current, sheetId);
+  return { sheet, recordedOperations: sheet.workflowSteps.slice(stepCountBefore) };
+}
 
 export interface ApplyResult {
   workbook: WorkbookModel;
@@ -417,34 +438,43 @@ export function applyCommand(workbook: WorkbookModel, command: AppCommand): Appl
     }
 
     case 'FILL_NULL': {
-      const { sheetId, columnId, value } = command.payload;
+      const { sheetId, columnId, fillType, value, sourceColumnId } = command.payload;
       const sheetBefore = getSheet(workbook, sheetId);
       const column = sheetBefore.columns.find((c) => c.id === columnId);
       if (!column) return { workbook, label: 'Preencher vazios' };
+      const sourceColumn =
+        fillType === 'column' && sourceColumnId ? sheetBefore.columns.find((c) => c.id === sourceColumnId) : undefined;
+      if (fillType === 'column' && !sourceColumn) return { workbook, label: 'Preencher vazios' };
       const next = updateSheet(workbook, sheetId, (s) => ({
         ...s,
         rows: s.rows.map((r) => {
           const current = r.cells[columnId];
-          return current === null || current === '' || current === undefined
-            ? { ...r, cells: { ...r.cells, [columnId]: value } }
-            : r;
+          if (current !== null && current !== '' && current !== undefined) return r;
+          const fillValue = fillType === 'column' ? (r.cells[sourceColumnId as string] ?? null) : value;
+          return { ...r, cells: { ...r.cells, [columnId]: fillValue } };
         }),
-        workflowSteps: [...s.workflowSteps, createWorkflowStep('fill_null', { column: column.name, value })],
+        workflowSteps: [
+          ...s.workflowSteps,
+          createWorkflowStep('fill_null', {
+            column: column.name,
+            fill_type: fillType,
+            value: fillType === 'constant' ? value : null,
+            source_column: sourceColumn?.name ?? null,
+          }),
+        ],
       }));
       return { workbook: next, label: 'Preencher vazios' };
     }
 
     case 'APPLY_FILTER_STEP': {
-      const { sheetId, columnId, operator, value } = command.payload;
+      const { sheetId, condition } = command.payload;
       const sheetBefore = getSheet(workbook, sheetId);
-      const column = sheetBefore.columns.find((c) => c.id === columnId);
-      if (!column) return { workbook, label: 'Filtrar linhas' };
       const next = updateSheet(workbook, sheetId, (s) => ({
         ...s,
-        rows: s.rows.filter((r) => evaluateFilter(r.cells[columnId], operator, value)),
+        rows: s.rows.filter((r) => evaluateCondition((colId) => r.cells[colId], condition)),
         workflowSteps: [
           ...s.workflowSteps,
-          createWorkflowStep('filter_rows', { column: column.name, operator, value }),
+          createWorkflowStep('filter_rows', { condition: nameCondition(condition, sheetBefore.columns) }),
         ],
       }));
       return { workbook: next, label: 'Filtrar linhas (etapa do workflow)' };
@@ -658,13 +688,23 @@ export function applyCommand(workbook: WorkbookModel, command: AppCommand): Appl
       const { sheetId, template, outputColumnName } = command.payload;
       const trimmedName = outputColumnName.trim();
       if (!trimmedName) return { workbook, label: 'Concatenar colunas' };
-      const newColumn = createColumn({ name: trimmedName, type: 'text' });
+      const sheetBefore = getSheet(workbook, sheetId);
+      // Mirror the engine's `with_columns(...alias(output_column))`: writing to
+      // an output name that already exists overwrites that column in place
+      // rather than adding a duplicate. This is what lets `concat_columns`
+      // target a column created earlier — e.g. one branch of a `when` — without
+      // changing the column set, which every branch of a `when` must preserve.
+      const existing = sheetBefore.columns.find((c) => c.name === trimmedName);
+      const newColumn = existing ? null : createColumn({ name: trimmedName, type: 'text' });
+      const targetColumnId = existing?.id ?? newColumn!.id;
       const next = updateSheet(workbook, sheetId, (s) => ({
         ...s,
-        columns: [...s.columns, newColumn],
+        columns: newColumn
+          ? [...s.columns, newColumn]
+          : s.columns.map((c) => (c.id === targetColumnId ? { ...c, type: 'text' } : c)),
         rows: s.rows.map((r) => ({
           ...r,
-          cells: { ...r.cells, [newColumn.id]: evaluateTemplate(template, r.cells, s.columns) },
+          cells: { ...r.cells, [targetColumnId]: evaluateTemplate(template, r.cells, s.columns) },
         })),
         workflowSteps: [
           ...s.workflowSteps,
@@ -786,6 +826,28 @@ export function applyCommand(workbook: WorkbookModel, command: AppCommand): Appl
       return { workbook: next, label: 'Arredondar' };
     }
 
+    case 'FIX_DECIMAL_PLACES': {
+      const { sheetId, columnId, decimals } = command.payload;
+      const sheetBefore = getSheet(workbook, sheetId);
+      const column = sheetBefore.columns.find((c) => c.id === columnId);
+      if (!column) return { workbook, label: 'Fixar casas decimais' };
+      const next = updateSheet(workbook, sheetId, (s) => ({
+        ...s,
+        columns: s.columns.map((c) => (c.id === columnId ? { ...c, type: 'text' } : c)),
+        rows: s.rows.map((r) => {
+          const raw = r.cells[columnId];
+          const num = typeof raw === 'number' ? raw : raw === null || raw === '' ? null : Number(raw);
+          const value = num === null || Number.isNaN(num) ? null : num.toFixed(decimals).replace('.', ',');
+          return { ...r, cells: { ...r.cells, [columnId]: value } };
+        }),
+        workflowSteps: [
+          ...s.workflowSteps,
+          createWorkflowStep('fix_decimal_places', { column: column.name, decimals }),
+        ],
+      }));
+      return { workbook: next, label: 'Fixar casas decimais' };
+    }
+
     case 'DEDUPLICATE_ROWS': {
       const { sheetId, columnIds } = command.payload;
       const sheetBefore = getSheet(workbook, sheetId);
@@ -826,6 +888,105 @@ export function applyCommand(workbook: WorkbookModel, command: AppCommand): Appl
         ],
       }));
       return { workbook: next, label: 'Adicionar coluna' };
+    }
+
+    case 'PROMOTE_HEADER_ROW': {
+      const { sheetId, rowId } = command.payload;
+      const sheetBefore = getSheet(workbook, sheetId);
+      const rowIndex = sheetBefore.rows.findIndex((r) => r.id === rowId);
+      if (rowIndex === -1) return { workbook, label: 'Definir linha de cabeçalho' };
+      const headerRow = sheetBefore.rows[rowIndex];
+      const next = updateSheet(workbook, sheetId, (s) => ({
+        ...s,
+        columns: s.columns.map((c) => {
+          const raw = headerRow.cells[c.id];
+          const name = raw === null || raw === undefined ? '' : String(raw).trim();
+          return name ? { ...c, name } : c;
+        }),
+        rows: s.rows.slice(rowIndex + 1),
+        workflowSteps: [...s.workflowSteps, createWorkflowStep('promote_header_row', { row_index: rowIndex })],
+      }));
+      return { workbook: next, label: 'Definir linha de cabeçalho' };
+    }
+
+    case 'APPLY_WHEN': {
+      const { sheetId, cases, default: defaultCommands } = command.payload;
+      const sheetBefore = getSheet(workbook, sheetId);
+      const baseRowIds = sheetBefore.rows.map((r) => r.id);
+      const baseColumnIds = sheetBefore.columns.map((c) => c.id);
+
+      // Every branch (each case + default) must come back with the same rows
+      // and the same columns it started with — that's what lets a branch
+      // contain any curated operation without a per-type whitelist, while
+      // still rejecting one that changed the table's shape (e.g. via a
+      // hand-imported workflow that snuck a structural op into a branch)
+      // instead of silently producing a mismatched merge.
+      function shapeMatches(sheet: SheetModel): boolean {
+        return (
+          sheet.rows.length === baseRowIds.length &&
+          sheet.rows.every((r, i) => r.id === baseRowIds[i]) &&
+          sheet.columns.length === baseColumnIds.length &&
+          sheet.columns.every((c, i) => c.id === baseColumnIds[i])
+        );
+      }
+
+      const masks: boolean[][] = [];
+      const branchSheets: SheetModel[] = [];
+      const recordedCases: { condition: ConditionExpr; operations: WorkflowOperation[] }[] = [];
+
+      for (const c of cases) {
+        const mask = sheetBefore.rows.map((r) => evaluateCondition((colId) => r.cells[colId], c.condition));
+        const branch = runWhenBranch(workbook, sheetId, c.operations);
+        if (!shapeMatches(branch.sheet)) return { workbook, label: 'Condicional (se / senão)' };
+        masks.push(mask);
+        branchSheets.push(branch.sheet);
+        recordedCases.push({
+          condition: nameCondition(c.condition, sheetBefore.columns),
+          operations: branch.recordedOperations,
+        });
+      }
+
+      let defaultSheet: SheetModel;
+      let recordedDefault: WorkflowOperation[] | null;
+      if (defaultCommands !== null) {
+        const branch = runWhenBranch(workbook, sheetId, defaultCommands);
+        if (!shapeMatches(branch.sheet)) return { workbook, label: 'Condicional (se / senão)' };
+        defaultSheet = branch.sheet;
+        recordedDefault = branch.recordedOperations;
+      } else {
+        defaultSheet = sheetBefore;
+        recordedDefault = null;
+      }
+
+      // First matching case wins; rows matching no case take the default
+      // branch's value (or, with no default, the row unchanged).
+      const mergedRows: RowRecord[] = sheetBefore.rows.map((_, i) => {
+        for (let c = 0; c < cases.length; c++) {
+          if (masks[c][i]) return branchSheets[c].rows[i];
+        }
+        return defaultSheet.rows[i];
+      });
+
+      const next = updateSheet(workbook, sheetId, (s) => ({
+        ...s,
+        rows: mergedRows,
+        workflowSteps: [
+          ...s.workflowSteps,
+          createWorkflowStep('when', { cases: recordedCases, default: recordedDefault }),
+        ],
+      }));
+      return { workbook: next, label: 'Condicional (se / senão)' };
+    }
+
+    case 'UPDATE_WORKFLOW_STEP': {
+      const { sheetId, stepId, operationType, params } = command.payload;
+      const next = updateSheet(workbook, sheetId, (s) => ({
+        ...s,
+        workflowSteps: s.workflowSteps.map((step) =>
+          step.id === stepId ? ({ ...step, type: operationType ?? step.type, params } as WorkflowOperation) : step,
+        ),
+      }));
+      return { workbook: next, label: 'Editar etapa do workflow' };
     }
 
     case 'IMPORT_SHEETS': {
