@@ -6,7 +6,7 @@ services:
     environment:
       TABULA_SECRET_KEY: ${TABULA_SECRET_KEY:-dev-only-insecure-secret-change-me-before-any-real-deploy}
       TABULA_DB_URL: sqlite:////data/tabula.db
-      TABULA_CORS_ORIGINS: http://localhost:5173,http://tabula.adpromotora.local:5173
+      TABULA_CORS_ORIGINS: http://localhost:5173,http://tabula.adpromotora.local
     volumes:
       # Bind-mount the source (not the whole build context) so `--reload`
       # picks up edits without rebuilding the image; the sqlite file lives
@@ -21,7 +21,7 @@ services:
     environment:
       # The browser (not the frontend container) is what calls this URL, so
       # it has to be the host-mapped port, not the in-network service name.
-      VITE_API_BASE_URL: http://localhost:8420
+      VITE_API_BASE_URL: http://tabula1.adpromotora.local
     volumes:
       - ./:/app
       - /app/node_modules
