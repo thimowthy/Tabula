@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { v4 as uuid } from 'uuid';
 import { createColumn, createRow, inferColumnType } from '../model/factory';
 import type { CellValue, SheetModel, WorkbookModel } from '../model/types';
+import { detectHeaderRow } from './headerDetection';
 
 function cellToValue(v: unknown): CellValue {
   if (v === undefined || v === null) return null;
@@ -17,8 +18,9 @@ export async function importWorkbookFile(file: File): Promise<WorkbookModel> {
   const sheets: SheetModel[] = wb.SheetNames.map((sheetName) => {
     const ws = wb.Sheets[sheetName];
     const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as unknown[][];
-    const headerRow = aoa[0] ?? [];
-    const dataRows = aoa.slice(1);
+    const headerRowIndex = detectHeaderRow(aoa);
+    const headerRow = aoa[headerRowIndex] ?? [];
+    const dataRows = aoa.slice(headerRowIndex + 1);
     const columnCount = Math.max(headerRow.length, ...dataRows.map((r) => r.length), 1);
 
     const values: CellValue[][] = dataRows.map((r) => Array.from({ length: columnCount }, (_, i) => cellToValue(r[i])));

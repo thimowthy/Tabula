@@ -5,7 +5,7 @@ from pathlib import Path
 import openpyxl
 
 from tabula_engine.canonical.model import CanonicalColumn, CanonicalTable, SourceRef
-from .detection import SingleTableFromTopLeft, TableDetectionStrategy
+from .detection import AutoDetectHeader, TableDetectionStrategy
 from .type_inference import infer_column_type
 
 
@@ -15,7 +15,7 @@ class XlsxReader:
     swapped in later without touching this class."""
 
     def __init__(self, detection_strategy: TableDetectionStrategy | None = None):
-        self._detection_strategy = detection_strategy or SingleTableFromTopLeft()
+        self._detection_strategy = detection_strategy or AutoDetectHeader()
 
     def read(self, path: str | Path) -> list[CanonicalTable]:
         path = Path(path)

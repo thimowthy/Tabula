@@ -157,12 +157,21 @@ def _condition_to_expr(condition: ConditionExpr, df: pl.DataFrame) -> pl.Expr:
             if df.schema[condition.column].is_numeric():
                 numeric_col = col.cast(pl.Float64, strict=False)
             else:
-                numeric_col = (
-                    col.cast(pl.Utf8, strict=False)
-                    .str.replace_all(".", "", literal=True)
+                # Mirrors _num_or_str's two-try coercion: attempt a plain
+                # Float64 parse first (correct for "1234.56", "1000", ...);
+                # only where that fails, retry with Brazilian formatting
+                # (thousands "." stripped, decimal "," turned into ".").
+                # Applying the Brazilian rewrite unconditionally — as this
+                # used to — corrupts already-standard-format numbers, e.g.
+                # "1234.56" -> "123456" (1234.56 becomes 123456.0).
+                text_col = col.cast(pl.Utf8, strict=False).str.strip_chars()
+                direct = text_col.cast(pl.Float64, strict=False)
+                brazilian = (
+                    text_col.str.replace_all(".", "", literal=True)
                     .str.replace(",", ".", literal=True)
                     .cast(pl.Float64, strict=False)
                 )
+                numeric_col = pl.when(direct.is_not_null()).then(direct).otherwise(brazilian)
             return _FILTER_EXPRS[condition.operator](numeric_col, float(numeric_target))
 
     return _FILTER_EXPRS[condition.operator](col, condition.value)

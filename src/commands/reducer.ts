@@ -330,9 +330,12 @@ export function applyCommand(workbook: WorkbookModel, command: AppCommand): Appl
             const cells = { ...r.cells };
             for (const colId of targetCols) {
               const val = cells[colId];
-              if (typeof val === 'string' && pattern.test(val)) {
-                cells[colId] = val.replace(pattern, replace);
-                changed = true;
+              if (typeof val === 'string') {
+                const newVal = val.replace(pattern, replace);
+                if (newVal !== val) {
+                  cells[colId] = newVal;
+                  changed = true;
+                }
               }
             }
             return changed ? { ...r, cells } : r;
