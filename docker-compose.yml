@@ -6,7 +6,7 @@ services:
     environment:
       TABULA_SECRET_KEY: ${TABULA_SECRET_KEY:-dev-only-insecure-secret-change-me-before-any-real-deploy}
       TABULA_DB_URL: sqlite:////data/tabula.db
-      TABULA_CORS_ORIGINS: http://localhost:5173,http://tabula1.adpromotora.local
+      TABULA_CORS_ORIGINS: http://localhost:5173,http://tabula.adpromotora.local
     volumes:
       # Bind-mount the source (not the whole build context) so `--reload`
       # picks up edits without rebuilding the image; the sqlite file lives
