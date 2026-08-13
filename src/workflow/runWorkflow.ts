@@ -128,7 +128,19 @@ export function resolveWorkflowStep(step: WorkflowOperation, sheet: SheetModel):
     case 'fill_constant': {
       const columnId = resolveColumnId(sheet, step.params.column);
       if (!columnId) return missing(step.params.column);
-      return { command: { type: 'FILL_CONSTANT', payload: { sheetId, columnId, value: step.params.value } } };
+      const fillType = step.params.fill_type ?? 'constant';
+      let sourceColumnId: string | null = null;
+      if (fillType === 'column') {
+        if (!step.params.source_column) return { error: 'coluna de origem não informada' };
+        sourceColumnId = resolveColumnId(sheet, step.params.source_column);
+        if (!sourceColumnId) return missing(step.params.source_column);
+      }
+      return {
+        command: {
+          type: 'FILL_CONSTANT',
+          payload: { sheetId, columnId, fillType, value: step.params.value, sourceColumnId },
+        },
+      };
     }
     case 'math_operation': {
       const columnId = resolveColumnId(sheet, step.params.column);
@@ -162,6 +174,11 @@ export function resolveWorkflowStep(step: WorkflowOperation, sheet: SheetModel):
           payload: { sheetId, columnId, length: step.params.length, padChar: step.params.pad_char, side: step.params.side },
         },
       };
+    }
+    case 'change_case': {
+      const columnId = resolveColumnId(sheet, step.params.column);
+      if (!columnId) return missing(step.params.column);
+      return { command: { type: 'CHANGE_CASE', payload: { sheetId, columnId, caseType: step.params.case_type } } };
     }
     case 'reorder_column': {
       const columnId = resolveColumnId(sheet, step.params.column);

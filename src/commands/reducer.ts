@@ -41,6 +41,14 @@ function evaluateTemplate(template: string, cells: Record<string, CellValue>, co
   });
 }
 
+const CASE_TRANSFORMS: Record<'upper' | 'lower' | 'title', (s: string) => string> = {
+  upper: (s) => s.toUpperCase(),
+  lower: (s) => s.toLowerCase(),
+  // Matches the engine's Polars `to_titlecase`: capitalizes the first letter
+  // of every run of letters, lowercasing the rest of that run.
+  title: (s) => s.replace(/[A-Za-zÀ-ÖØ-öø-ÿ]+/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()),
+};
+
 function compareValues(a: CellValue, b: CellValue, type: ColumnDef['type']): number {
   if (a === null || a === '') return 1;
   if (b === null || b === '') return -1;
@@ -587,16 +595,30 @@ export function applyCommand(workbook: WorkbookModel, command: AppCommand): Appl
     }
 
     case 'FILL_CONSTANT': {
-      const { sheetId, columnId, value } = command.payload;
+      const { sheetId, columnId, fillType, value, sourceColumnId } = command.payload;
       const sheetBefore = getSheet(workbook, sheetId);
       const column = sheetBefore.columns.find((c) => c.id === columnId);
-      if (!column) return { workbook, label: 'Preencher com constante' };
+      if (!column) return { workbook, label: 'Preencher com valores' };
+      const sourceColumn =
+        fillType === 'column' && sourceColumnId ? sheetBefore.columns.find((c) => c.id === sourceColumnId) : undefined;
+      if (fillType === 'column' && !sourceColumn) return { workbook, label: 'Preencher com valores' };
       const next = updateSheet(workbook, sheetId, (s) => ({
         ...s,
-        rows: s.rows.map((r) => ({ ...r, cells: { ...r.cells, [columnId]: value } })),
-        workflowSteps: [...s.workflowSteps, createWorkflowStep('fill_constant', { column: column.name, value })],
+        rows: s.rows.map((r) => ({
+          ...r,
+          cells: { ...r.cells, [columnId]: fillType === 'column' ? (r.cells[sourceColumnId as string] ?? null) : value },
+        })),
+        workflowSteps: [
+          ...s.workflowSteps,
+          createWorkflowStep('fill_constant', {
+            column: column.name,
+            fill_type: fillType,
+            value: fillType === 'constant' ? value : null,
+            source_column: sourceColumn?.name ?? null,
+          }),
+        ],
       }));
-      return { workbook: next, label: 'Preencher com constante' };
+      return { workbook: next, label: 'Preencher com valores' };
     }
 
     case 'APPLY_MATH': {
@@ -685,6 +707,28 @@ export function applyCommand(workbook: WorkbookModel, command: AppCommand): Appl
         ],
       }));
       return { workbook: next, label: 'Preencher tamanho fixo' };
+    }
+
+    case 'CHANGE_CASE': {
+      const { sheetId, columnId, caseType } = command.payload;
+      const sheetBefore = getSheet(workbook, sheetId);
+      const column = sheetBefore.columns.find((c) => c.id === columnId);
+      if (!column) return { workbook, label: 'Alterar capitalização' };
+      const transform = CASE_TRANSFORMS[caseType];
+      const next = updateSheet(workbook, sheetId, (s) => ({
+        ...s,
+        columns: s.columns.map((c) => (c.id === columnId ? { ...c, type: 'text' } : c)),
+        rows: s.rows.map((r) => {
+          const raw = r.cells[columnId];
+          if (raw === null || raw === undefined) return r;
+          return { ...r, cells: { ...r.cells, [columnId]: transform(String(raw)) } };
+        }),
+        workflowSteps: [
+          ...s.workflowSteps,
+          createWorkflowStep('change_case', { column: column.name, case_type: caseType }),
+        ],
+      }));
+      return { workbook: next, label: 'Alterar capitalização' };
     }
 
     case 'CONCAT_COLUMNS': {
@@ -990,6 +1034,30 @@ export function applyCommand(workbook: WorkbookModel, command: AppCommand): Appl
         ),
       }));
       return { workbook: next, label: 'Editar etapa do workflow' };
+    }
+
+    case 'REORDER_WORKFLOW_STEP': {
+      const { sheetId, stepId, beforeStepId } = command.payload;
+      if (stepId === beforeStepId) return { workbook, label: 'Reordenar etapa do workflow' };
+      const next = updateSheet(workbook, sheetId, (s) => {
+        const moved = s.workflowSteps.find((step) => step.id === stepId);
+        if (!moved) return s;
+        const remaining = s.workflowSteps.filter((step) => step.id !== stepId);
+        const insertAt = beforeStepId ? remaining.findIndex((step) => step.id === beforeStepId) : -1;
+        const workflowSteps = [...remaining];
+        workflowSteps.splice(insertAt === -1 ? remaining.length : insertAt, 0, moved);
+        return { ...s, workflowSteps };
+      });
+      return { workbook: next, label: 'Reordenar etapa do workflow' };
+    }
+
+    case 'DELETE_WORKFLOW_STEP': {
+      const { sheetId, stepId } = command.payload;
+      const next = updateSheet(workbook, sheetId, (s) => ({
+        ...s,
+        workflowSteps: s.workflowSteps.filter((step) => step.id !== stepId),
+      }));
+      return { workbook: next, label: 'Excluir etapa do workflow' };
     }
 
     case 'IMPORT_SHEETS': {

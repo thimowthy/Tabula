@@ -7,6 +7,7 @@ import { FillNullModal } from './FillNullModal';
 import { FillConstantModal } from './FillConstantModal';
 import { MathOperationModal } from './MathOperationModal';
 import { PadStringModal } from './PadStringModal';
+import { ChangeCaseModal } from './ChangeCaseModal';
 import { ConcatColumnsModal } from './ConcatColumnsModal';
 import { ReplaceStepModal } from './ReplaceStepModal';
 import { ExtractModal } from './ExtractModal';
@@ -30,11 +31,12 @@ type CuratedType =
   | 'fixDecimals'
   | 'castType'
   | 'trim'
+  | 'changeCase'
   | 'when';
 
 const CURATED_OPTIONS: { value: CuratedType; label: string }[] = [
   { value: 'fillNull', label: 'Preencher vazios…' },
-  { value: 'fillConstant', label: 'Preencher com constante…' },
+  { value: 'fillConstant', label: 'Preencher com valores…' },
   { value: 'math', label: 'Operação matemática…' },
   { value: 'pad', label: 'Preencher tamanho fixo…' },
   { value: 'concat', label: 'Concatenar colunas…' },
@@ -45,6 +47,7 @@ const CURATED_OPTIONS: { value: CuratedType; label: string }[] = [
   { value: 'fixDecimals', label: 'Fixar casas decimais…' },
   { value: 'castType', label: 'Converter tipo…' },
   { value: 'trim', label: 'Remover espaços…' },
+  { value: 'changeCase', label: 'Maiúsculas/minúsculas/capitalizar…' },
   { value: 'when', label: 'Condicional aninhado…' },
 ];
 
@@ -134,6 +137,7 @@ export function BranchOperationsEditor({ columns, operations, onChange }: Branch
       {openModal === 'fixDecimals' && <FixDecimalPlacesModal onClose={() => setOpenModal(null)} onApply={addOperation} />}
       {openModal === 'castType' && <CastTypeStepModal onClose={() => setOpenModal(null)} onApply={addOperation} />}
       {openModal === 'trim' && <TrimWhitespaceModal onClose={() => setOpenModal(null)} onApply={addOperation} />}
+      {openModal === 'changeCase' && <ChangeCaseModal onClose={() => setOpenModal(null)} onApply={addOperation} />}
       {openModal === 'when' && <WhenModal onClose={() => setOpenModal(null)} onApply={addOperation} />}
     </div>
   );

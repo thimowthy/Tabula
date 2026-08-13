@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Toolbar } from './components/Toolbar';
+import { Ribbon } from './components/Ribbon';
 import { TabBar } from './components/TabBar';
 import { WorkflowPanel } from './components/WorkflowPanel';
 import { WorkflowsView } from './components/WorkflowsView';
@@ -60,6 +61,7 @@ function App() {
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden">
       <Toolbar />
+      {view === 'editor' && <Ribbon />}
       {view === 'workflows' ? (
         <WorkflowsView />
       ) : (

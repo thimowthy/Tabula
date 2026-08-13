@@ -61,7 +61,16 @@ export type AppCommand =
       type: 'SPLIT_COLUMN';
       payload: { sheetId: string; columnId: string; delimiter: string; newNames: string[]; keepOriginal: boolean };
     }
-  | { type: 'FILL_CONSTANT'; payload: { sheetId: string; columnId: string; value: CellValue } }
+  | {
+      type: 'FILL_CONSTANT';
+      payload: {
+        sheetId: string;
+        columnId: string;
+        fillType: 'constant' | 'column';
+        value: CellValue;
+        sourceColumnId: string | null;
+      };
+    }
   | {
       type: 'APPLY_MATH';
       payload: {
@@ -77,6 +86,10 @@ export type AppCommand =
   | {
       type: 'PAD_STRING';
       payload: { sheetId: string; columnId: string; length: number; padChar: string; side: 'left' | 'right' };
+    }
+  | {
+      type: 'CHANGE_CASE';
+      payload: { sheetId: string; columnId: string; caseType: 'upper' | 'lower' | 'title' };
     }
   | { type: 'CONCAT_COLUMNS'; payload: { sheetId: string; template: string; outputColumnName: string } }
   | {
@@ -123,6 +136,19 @@ export type AppCommand =
       type: 'UPDATE_WORKFLOW_STEP';
       payload: { sheetId: string; stepId: string; operationType?: string; params: Record<string, unknown> };
     }
+  | {
+      /** Moves an already-recorded step to sit immediately before
+       * `beforeStepId` (or to the end, if null) — same "move before X"
+       * shape as MOVE_COLUMN, just over workflowSteps instead of columns.
+       * Used by the workflow panel's reorder controls. Like
+       * UPDATE_WORKFLOW_STEP, does NOT touch rows/columns or renumber any
+       * column reference recorded in the moved step — reordering across a
+       * rename/add/drop it depends on is the user's call, same as editing
+       * one already is. */
+      type: 'REORDER_WORKFLOW_STEP';
+      payload: { sheetId: string; stepId: string; beforeStepId: string | null };
+    }
+  | { type: 'DELETE_WORKFLOW_STEP'; payload: { sheetId: string; stepId: string } }
   | { type: 'IMPORT_SHEETS'; payload: { sheets: SheetModel[] } };
 
 export type AppCommandType = AppCommand['type'];

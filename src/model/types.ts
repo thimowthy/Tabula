@@ -60,7 +60,11 @@ export type WorkflowOperation =
   | { id: string; type: 'cast_to_float'; params: { column: string } }
   | { id: string; type: 'cast_to_datetime'; params: { column: string; format: string | null } }
   | { id: string; type: 'split_column'; params: { column: string; delimiter: string; into: string[]; keep_original: boolean } }
-  | { id: string; type: 'fill_constant'; params: { column: string; value: CellValue } }
+  | {
+      id: string;
+      type: 'fill_constant';
+      params: { column: string; fill_type: 'constant' | 'column'; value: CellValue; source_column: string | null };
+    }
   | {
       id: string;
       type: 'math_operation';
@@ -73,6 +77,7 @@ export type WorkflowOperation =
       };
     }
   | { id: string; type: 'pad_string'; params: { column: string; length: number; pad_char: string; side: 'left' | 'right' } }
+  | { id: string; type: 'change_case'; params: { column: string; case_type: 'upper' | 'lower' | 'title' } }
   | { id: string; type: 'reorder_column'; params: { column: string; before: string | null } }
   | { id: string; type: 'concat_columns'; params: { template: string; output_column: string } }
   | {

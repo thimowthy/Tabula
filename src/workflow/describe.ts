@@ -20,6 +20,12 @@ export function describeCondition(condition: ConditionExpr): string {
   return `"${condition.column}" ${opLabel}${needsValue ? ` "${condition.value ?? ''}"` : ''}`;
 }
 
+const CASE_TYPE_LABEL: Record<'upper' | 'lower' | 'title', string> = {
+  upper: 'MAIÚSCULAS',
+  lower: 'minúsculas',
+  title: 'Capitalizado',
+};
+
 const MATH_LABEL: Record<string, string> = {
   add: '+',
   subtract: '−',
@@ -38,9 +44,10 @@ export const OPERATION_BADGE: Record<WorkflowOperation['type'], string> = {
   cast_to_float: 'DEC',
   cast_to_datetime: 'DATA',
   split_column: 'SPLIT',
-  fill_constant: 'CONST',
+  fill_constant: 'VALOR',
   math_operation: 'CALC',
   pad_string: 'PAD',
+  change_case: 'AB',
   reorder_column: 'MOVE',
   concat_columns: 'CONCAT',
   replace: 'SUBST',
@@ -79,7 +86,9 @@ export function describeOperation(op: WorkflowOperation): string {
     case 'split_column':
       return `Dividir "${op.params.column}" por "${op.params.delimiter}" em: ${op.params.into.join(', ')}${op.params.keep_original ? ' (mantendo original)' : ''}`;
     case 'fill_constant':
-      return `Preencher toda a coluna "${op.params.column}" com "${op.params.value ?? ''}"`;
+      return op.params.fill_type === 'column'
+        ? `Preencher toda a coluna "${op.params.column}" com o valor de "${op.params.source_column ?? ''}"`
+        : `Preencher toda a coluna "${op.params.column}" com "${op.params.value ?? ''}"`;
     case 'math_operation': {
       const operand = op.params.operand_type === 'column' ? `"${op.params.operand}"` : op.params.operand;
       const target = op.params.output_column ? `"${op.params.output_column}"` : `"${op.params.column}"`;
@@ -87,6 +96,8 @@ export function describeOperation(op: WorkflowOperation): string {
     }
     case 'pad_string':
       return `Preencher "${op.params.column}" até ${op.params.length} caracteres com "${op.params.pad_char}" (${op.params.side === 'left' ? 'à esquerda' : 'à direita'})`;
+    case 'change_case':
+      return `Converter "${op.params.column}" para ${CASE_TYPE_LABEL[op.params.case_type]}`;
     case 'reorder_column':
       return op.params.before
         ? `Mover "${op.params.column}" para antes de "${op.params.before}"`

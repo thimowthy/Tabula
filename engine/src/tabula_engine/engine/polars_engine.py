@@ -27,6 +27,7 @@ from tabula_engine.definition.operations.builtin import (
     CastToDatetimeOp,
     CastToFloatOp,
     CastToIntegerOp,
+    ChangeCaseOp,
     ConcatColumnsOp,
     DeduplicateOp,
     DropColumnsOp,
@@ -188,6 +189,19 @@ def _compile_trim_whitespace(df: pl.DataFrame, spec: TrimWhitespaceOp, step_id: 
     return df.with_columns([pl.col(c).str.strip_chars() for c in columns]), []
 
 
+_CASE_TRANSFORMS: dict[str, Callable[[pl.Expr], pl.Expr]] = {
+    "upper": lambda e: e.str.to_uppercase(),
+    "lower": lambda e: e.str.to_lowercase(),
+    "title": lambda e: e.str.to_titlecase(),
+}
+
+
+@register_compiler("change_case")
+def _compile_change_case(df: pl.DataFrame, spec: ChangeCaseOp, step_id: str | None):
+    transform = _CASE_TRANSFORMS[spec.case_type]
+    return df.with_columns(transform(pl.col(spec.column).cast(pl.Utf8, strict=False))), []
+
+
 @register_compiler("fill_null")
 def _compile_fill_null(df: pl.DataFrame, spec: FillNullOp, step_id: str | None):
     if spec.fill_type == "column" and spec.source_column is not None:
@@ -254,6 +268,8 @@ def _compile_split_column(df: pl.DataFrame, spec: SplitColumnOp, step_id: str | 
 
 @register_compiler("fill_constant")
 def _compile_fill_constant(df: pl.DataFrame, spec: FillConstantOp, step_id: str | None):
+    if spec.fill_type == "column" and spec.source_column is not None:
+        return df.with_columns(pl.col(spec.source_column).alias(spec.column)), []
     return df.with_columns(pl.lit(spec.value).alias(spec.column)), []
 
 
@@ -438,6 +454,8 @@ def _update_types(
         current_types[spec.output_column or spec.column] = ColumnType.NUMBER
     elif isinstance(spec, PadStringOp):
         # A zero-padded ID etc. must stay text — a numeric type would strip the padding.
+        current_types[spec.column] = ColumnType.TEXT
+    elif isinstance(spec, ChangeCaseOp):
         current_types[spec.column] = ColumnType.TEXT
     elif isinstance(spec, ConcatColumnsOp):
         current_types[spec.output_column] = ColumnType.TEXT

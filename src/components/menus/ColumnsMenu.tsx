@@ -1,19 +1,18 @@
 import { useState } from 'react';
-import { Columns3 } from 'lucide-react';
+import { TableProperties } from 'lucide-react';
+import { RibbonGroups, type RibbonGroup } from '../toolbar/RibbonRow';
 import { ColumnManagerModal } from './ColumnManagerModal';
 
 export function ColumnsMenu() {
   const [open, setOpen] = useState(false);
+
+  const groups: RibbonGroup[] = [
+    { title: 'Gerenciar', items: [{ label: 'Gerenciar colunas…', icon: TableProperties, onSelect: () => setOpen(true) }] },
+  ];
+
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-[13px] text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]"
-      >
-        <Columns3 size={16} />
-        <span>Colunas</span>
-      </button>
+      <RibbonGroups groups={groups} />
       {open && <ColumnManagerModal onClose={() => setOpen(false)} />}
     </>
   );

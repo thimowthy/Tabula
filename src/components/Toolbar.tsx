@@ -3,9 +3,6 @@ import { Keyboard, ListChecks, PlayCircle, Redo2, UserCircle2, Undo2 } from 'luc
 import { useActiveSheet, useWorkbookStore } from '../store/useWorkbookStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { FileMenu } from './menus/FileMenu';
-import { DataMenu } from './menus/DataMenu';
-import { OperationsMenu } from './menus/OperationsMenu';
-import { ColumnsMenu } from './menus/ColumnsMenu';
 import { RunWorkflowModal } from './menus/RunWorkflowModal';
 import { AuthModal } from './menus/AuthModal';
 import { FormattingControls } from './toolbar/FormattingControls';
@@ -80,12 +77,6 @@ export function Toolbar() {
           <Divider />
 
           <FormattingControls />
-
-          <Divider />
-
-          <DataMenu />
-          <OperationsMenu />
-          <ColumnsMenu />
 
           <Divider />
 

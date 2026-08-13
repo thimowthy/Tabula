@@ -104,9 +104,15 @@ class SplitColumnOp(OperationSpec):
 
 @register_operation("fill_constant")
 class FillConstantOp(OperationSpec):
-    column: str
-    value: Any
     """Overwrites every row, unlike fill_null which only touches empty cells."""
+
+    column: str
+    fill_type: FillSource = "constant"
+    value: Any = None
+    """Used when fill_type == 'constant'."""
+    source_column: str | None = None
+    """Used when fill_type == 'column' — the same-row value of this column
+    overwrites every row of ``column`` instead of a fixed ``value``."""
 
 
 MathOperator = Literal["add", "subtract", "multiply", "divide"]
@@ -129,6 +135,16 @@ class PadStringOp(OperationSpec):
     length: int
     pad_char: str = "0"
     side: Literal["left", "right"] = "left"
+
+
+CaseType = Literal["upper", "lower", "title"]
+
+
+@register_operation("change_case")
+class ChangeCaseOp(OperationSpec):
+    column: str
+    case_type: CaseType
+    """'title' capitalizes the first letter of every word (like Excel's PROPER)."""
 
 
 @register_operation("reorder_column")

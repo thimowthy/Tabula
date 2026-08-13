@@ -80,6 +80,23 @@ def test_fill_constant_overwrites_every_row():
     assert [r["status"] for r in outcome.table.rows] == ["pendente", "pendente"]
 
 
+def test_fill_constant_from_another_column():
+    table = _table(
+        [CanonicalColumn(name="apelido", type=ColumnType.TEXT), CanonicalColumn(name="nome", type=ColumnType.TEXT)],
+        [{"apelido": None, "nome": "Ana"}, {"apelido": "Bru", "nome": "Bruno"}],
+    )
+    outcome = PolarsExecutor().run(
+        table,
+        [
+            Step(
+                operation_type="fill_constant",
+                params={"column": "apelido", "fill_type": "column", "source_column": "nome"},
+            )
+        ],
+    )
+    assert [r["apelido"] for r in outcome.table.rows] == ["Ana", "Bruno"]
+
+
 def test_math_operation_constant_and_column_operands():
     table = _table(
         [CanonicalColumn(name="preco", type=ColumnType.NUMBER), CanonicalColumn(name="qtd", type=ColumnType.NUMBER)],
@@ -216,6 +233,35 @@ def test_fix_decimal_places_pads_and_uses_comma():
         table, [Step(operation_type="fix_decimal_places", params={"column": "preco", "decimals": 2})]
     )
     assert [r["preco"] for r in outcome.table.rows] == ["5,00", "3,14"]
+    assert outcome.table.columns[0].type == ColumnType.TEXT
+
+
+def test_change_case_upper_lower_and_title():
+    table = _table([CanonicalColumn(name="nome", type=ColumnType.TEXT)], [{"nome": "ana maria silva"}, {"nome": None}])
+    outcome_upper = PolarsExecutor().run(
+        table, [Step(operation_type="change_case", params={"column": "nome", "case_type": "upper"})]
+    )
+    assert [r["nome"] for r in outcome_upper.table.rows] == ["ANA MARIA SILVA", None]
+
+    outcome_lower = PolarsExecutor().run(
+        _table([CanonicalColumn(name="nome", type=ColumnType.TEXT)], [{"nome": "ANA MARIA SILVA"}]),
+        [Step(operation_type="change_case", params={"column": "nome", "case_type": "lower"})],
+    )
+    assert outcome_lower.table.rows[0]["nome"] == "ana maria silva"
+
+    outcome_title = PolarsExecutor().run(
+        _table([CanonicalColumn(name="nome", type=ColumnType.TEXT)], [{"nome": "ana maria silva"}]),
+        [Step(operation_type="change_case", params={"column": "nome", "case_type": "title"})],
+    )
+    assert outcome_title.table.rows[0]["nome"] == "Ana Maria Silva"
+
+
+def test_change_case_casts_numeric_column_to_text():
+    table = _table([CanonicalColumn(name="cod", type=ColumnType.NUMBER)], [{"cod": 123}])
+    outcome = PolarsExecutor().run(
+        table, [Step(operation_type="change_case", params={"column": "cod", "case_type": "upper"})]
+    )
+    assert outcome.table.rows[0]["cod"] == "123.0"
     assert outcome.table.columns[0].type == ColumnType.TEXT
 
 

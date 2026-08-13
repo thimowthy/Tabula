@@ -21,20 +21,39 @@ export function FillConstantModal({ onClose, onApply, initialParams, onSaveDefin
   const [columnId, setColumnId] = useState(
     () => sheet.columns.find((c) => c.name === initialParams?.column)?.id ?? selectedColumnId ?? sheet.columns[0]?.id ?? '',
   );
+  const [fillType, setFillType] = useState<'constant' | 'column'>(initialParams?.fill_type ?? 'constant');
   const [value, setValue] = useState(initialParams?.value !== undefined && initialParams?.value !== null ? String(initialParams.value) : '');
+  const [sourceColumnId, setSourceColumnId] = useState(
+    () =>
+      sheet.columns.find((c) => c.name === initialParams?.source_column)?.id ??
+      sheet.columns[1]?.id ??
+      sheet.columns[0]?.id ??
+      '',
+  );
 
   const column = sheet.columns.find((c) => c.id === columnId);
 
   function apply() {
     if (!column) return;
     if (onSaveDefinition) {
-      onSaveDefinition({ column: column.name, value: parseCellInput(value, column.type) });
+      onSaveDefinition({
+        column: column.name,
+        fill_type: fillType,
+        value: fillType === 'constant' ? parseCellInput(value, column.type) : null,
+        source_column: fillType === 'column' ? (sheet.columns.find((c) => c.id === sourceColumnId)?.name ?? null) : null,
+      });
       onClose();
       return;
     }
     const command: AppCommand = {
       type: 'FILL_CONSTANT',
-      payload: { sheetId: sheet.id, columnId, value: parseCellInput(value, column.type) },
+      payload: {
+        sheetId: sheet.id,
+        columnId,
+        fillType,
+        value: fillType === 'constant' ? parseCellInput(value, column.type) : null,
+        sourceColumnId: fillType === 'column' ? sourceColumnId : null,
+      },
     };
     if (onApply) onApply(command);
     else dispatch(command);
@@ -42,10 +61,10 @@ export function FillConstantModal({ onClose, onApply, initialParams, onSaveDefin
   }
 
   return (
-    <Modal title="Etapa do workflow: preencher com constante" onClose={onClose} width={360}>
+    <Modal title="Etapa do workflow: preencher com valores" onClose={onClose} width={360}>
       <p className="mb-3 text-[12px] text-[var(--color-text-subtle)]">
-        Sobrescreve <strong>toda</strong> a coluna com o valor informado — diferente de "preencher vazios", que só
-        toca células em branco.
+        Sobrescreve <strong>toda</strong> a coluna com um valor fixo ou com o valor de outra coluna na mesma linha —
+        diferente de "preencher vazios", que só toca células em branco.
       </p>
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-[12px] text-[var(--color-text-subtle)]">
@@ -63,15 +82,57 @@ export function FillConstantModal({ onClose, onApply, initialParams, onSaveDefin
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-[12px] text-[var(--color-text-subtle)]">
-          Valor constante
-          <input
-            className="rounded border px-2 py-1.5 text-[13px]"
-            style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-          />
-        </label>
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => setFillType('constant')}
+            className="flex-1 rounded border px-2 py-1.5 text-[12px]"
+            style={{
+              borderColor: fillType === 'constant' ? 'var(--color-accent)' : 'var(--color-border)',
+              color: fillType === 'constant' ? 'var(--color-accent)' : 'var(--color-text)',
+            }}
+          >
+            Com um valor
+          </button>
+          <button
+            type="button"
+            onClick={() => setFillType('column')}
+            className="flex-1 rounded border px-2 py-1.5 text-[12px]"
+            style={{
+              borderColor: fillType === 'column' ? 'var(--color-accent)' : 'var(--color-border)',
+              color: fillType === 'column' ? 'var(--color-accent)' : 'var(--color-text)',
+            }}
+          >
+            Com outra coluna
+          </button>
+        </div>
+        {fillType === 'constant' ? (
+          <label className="flex flex-col gap-1 text-[12px] text-[var(--color-text-subtle)]">
+            Valor constante
+            <input
+              className="rounded border px-2 py-1.5 text-[13px]"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+            />
+          </label>
+        ) : (
+          <label className="flex flex-col gap-1 text-[12px] text-[var(--color-text-subtle)]">
+            Coluna de origem
+            <select
+              className="rounded border px-2 py-1.5 text-[13px]"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+              value={sourceColumnId}
+              onChange={(e) => setSourceColumnId(e.target.value)}
+            >
+              {sheet.columns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button
           type="button"
           onClick={apply}

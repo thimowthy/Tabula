@@ -28,7 +28,12 @@ export function previewWorkflowOperation(command: AppCommand, columns: ColumnDef
       return {
         id: command.type,
         type: 'fill_constant',
-        params: { column: nameOf(columns, command.payload.columnId), value: command.payload.value },
+        params: {
+          column: nameOf(columns, command.payload.columnId),
+          fill_type: command.payload.fillType,
+          value: command.payload.value,
+          source_column: command.payload.sourceColumnId ? nameOf(columns, command.payload.sourceColumnId) : null,
+        },
       };
     case 'APPLY_MATH':
       return {
@@ -53,6 +58,12 @@ export function previewWorkflowOperation(command: AppCommand, columns: ColumnDef
           pad_char: command.payload.padChar,
           side: command.payload.side,
         },
+      };
+    case 'CHANGE_CASE':
+      return {
+        id: command.type,
+        type: 'change_case',
+        params: { column: nameOf(columns, command.payload.columnId), case_type: command.payload.caseType },
       };
     case 'CONCAT_COLUMNS':
       return {
