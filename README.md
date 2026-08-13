@@ -8,7 +8,7 @@ recording is a first-class object: publish it with a name and tags, and
 later run it again against a *different* spreadsheet to get the same
 transformation applied automatically.
 
-The project has three parts:
+The project has three parts
 
 | Part | What it is | Stack |
 |---|---|---|
