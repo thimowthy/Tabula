@@ -17,6 +17,17 @@ export type SheetFilters = Record<string, string>;
 /** Which top-level screen is showing — switched via the "Tabula" menu in the toolbar. */
 export type AppView = 'editor' | 'workflows';
 
+/** Marks the active sheet as holding a published workflow's steps for
+ * editing (see EditWorkflowModal) — lets the WorkflowPanel offer "save as a
+ * new version" back to that same catalog entry instead of only exporting
+ * .json or publishing a brand-new one. */
+export interface EditingServerWorkflow {
+  id: string;
+  name: string;
+  tags: string[];
+  sheetId: string;
+}
+
 interface WorkbookStore {
   workbook: WorkbookModel;
   past: HistoryEntry[];
@@ -28,6 +39,7 @@ interface WorkbookStore {
   workflowPanelOpen: boolean;
   shortcutsModalOpen: boolean;
   view: AppView;
+  editingServerWorkflow: EditingServerWorkflow | null;
 
   dispatch: (command: AppCommand) => void;
   undo: () => void;
@@ -44,8 +56,10 @@ interface WorkbookStore {
   clearFilters: (sheetId: string) => void;
   setDocumentName: (name: string) => void;
   toggleWorkflowPanel: () => void;
+  setWorkflowPanelOpen: (open: boolean) => void;
   setShortcutsModalOpen: (open: boolean) => void;
   setView: (view: AppView) => void;
+  setEditingServerWorkflow: (value: EditingServerWorkflow | null) => void;
 }
 
 export const useWorkbookStore = create<WorkbookStore>((set, get) => ({
@@ -58,6 +72,7 @@ export const useWorkbookStore = create<WorkbookStore>((set, get) => ({
   workflowPanelOpen: false,
   shortcutsModalOpen: false,
   view: 'editor',
+  editingServerWorkflow: null,
 
   dispatch: (command) => {
     const { workbook, past } = get();
@@ -121,8 +136,10 @@ export const useWorkbookStore = create<WorkbookStore>((set, get) => ({
   clearFilters: (sheetId) => set((state) => ({ filters: { ...state.filters, [sheetId]: {} } })),
   setDocumentName: (documentName) => set({ documentName }),
   toggleWorkflowPanel: () => set((state) => ({ workflowPanelOpen: !state.workflowPanelOpen })),
+  setWorkflowPanelOpen: (workflowPanelOpen) => set({ workflowPanelOpen }),
   setShortcutsModalOpen: (shortcutsModalOpen) => set({ shortcutsModalOpen }),
   setView: (view) => set({ view }),
+  setEditingServerWorkflow: (editingServerWorkflow) => set({ editingServerWorkflow }),
 }));
 
 export function useActiveSheet() {

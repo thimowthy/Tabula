@@ -1,7 +1,7 @@
 import { v4 as uuid } from 'uuid';
 import { createColumn, createEmptySheet, createRow } from '../model/factory';
 import { getSheet, updateSheet } from '../model/ops';
-import { evaluateCondition } from '../model/filterEval';
+import { evaluateCondition, numOrStr } from '../model/filterEval';
 import { nameCondition, type ConditionExpr } from '../model/condition';
 import type { CellValue, ColumnDef, RowRecord, SheetModel, WorkbookModel, WorkflowOperation } from '../model/types';
 import { createWorkflowStep } from '../workflow/operations';
@@ -50,8 +50,15 @@ const CASE_TRANSFORMS: Record<'upper' | 'lower' | 'title', (s: string) => string
 };
 
 function compareValues(a: CellValue, b: CellValue, type: ColumnDef['type']): number {
-  if (a === null || a === '') return 1;
-  if (b === null || b === '') return -1;
+  const aBlank = a === null || a === undefined || a === '';
+  const bBlank = b === null || b === undefined || b === '';
+  // Blanks always sort last, but two blanks must compare equal — returning a
+  // constant 1 here (rather than 0) breaks the comparator's antisymmetry, which
+  // is harmless for ASC but reverses the relative order of tied blank rows once
+  // SORT_ROWS negates the comparator for DESC.
+  if (aBlank && bBlank) return 0;
+  if (aBlank) return 1;
+  if (bBlank) return -1;
   if (type === 'number') return Number(a) - Number(b);
   if (type === 'boolean') return Number(a) - Number(b);
   if (type === 'date') return new Date(String(a)).getTime() - new Date(String(b)).getTime();
@@ -501,8 +508,8 @@ export function applyCommand(workbook: WorkbookModel, command: AppCommand): Appl
         columns: s.columns.map((c) => (c.id === columnId ? { ...c, type: 'number' } : c)),
         rows: s.rows.map((r) => {
           const raw = r.cells[columnId];
-          const num = typeof raw === 'number' ? raw : raw === null || raw === '' ? null : Number(raw);
-          const value = num === null || Number.isNaN(num) ? null : Math.trunc(num);
+          const num = typeof raw === 'number' ? raw : raw === null || raw === '' ? null : numOrStr(raw);
+          const value = typeof num === 'number' ? Math.trunc(num) : null;
           return { ...r, cells: { ...r.cells, [columnId]: value } };
         }),
         workflowSteps: [...s.workflowSteps, createWorkflowStep('cast_to_integer', { column: column.name })],
@@ -520,8 +527,8 @@ export function applyCommand(workbook: WorkbookModel, command: AppCommand): Appl
         columns: s.columns.map((c) => (c.id === columnId ? { ...c, type: 'number' } : c)),
         rows: s.rows.map((r) => {
           const raw = r.cells[columnId];
-          const num = typeof raw === 'number' ? raw : raw === null || raw === '' ? null : Number(raw);
-          return { ...r, cells: { ...r.cells, [columnId]: num === null || Number.isNaN(num) ? null : num } };
+          const num = typeof raw === 'number' ? raw : raw === null || raw === '' ? null : numOrStr(raw);
+          return { ...r, cells: { ...r.cells, [columnId]: typeof num === 'number' ? num : null } };
         }),
         workflowSteps: [...s.workflowSteps, createWorkflowStep('cast_to_float', { column: column.name })],
       }));

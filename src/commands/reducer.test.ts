@@ -208,3 +208,54 @@ describe('DELETE_WORKFLOW_STEP', () => {
     expect(order(result.workbook)).toEqual(['a', 'b']);
   });
 });
+
+describe('SORT_ROWS', () => {
+  it('keeps the original relative order of tied blank cells when sorting descending', () => {
+    const { workbook, sheetId, columnId } = makeWorkbook(['Belo Horizonte', '', 'Curitiba', '', 'Aracaju']);
+    const originalBlankIds = workbook.sheets[0].rows.filter((r) => r.cells[columnId] === '').map((r) => r.id);
+
+    const result = applyCommand(workbook, { type: 'SORT_ROWS', payload: { sheetId, columnId, direction: 'DESC' } });
+    const sortedBlankIds = result.workbook.sheets[0].rows.filter((r) => r.cells[columnId] === '').map((r) => r.id);
+
+    expect(sortedBlankIds).toEqual(originalBlankIds);
+  });
+
+  it('sorts non-blank values descending', () => {
+    const { workbook, sheetId, columnId } = makeWorkbook(['banana', '', 'abacaxi', 'cereja']);
+    const result = applyCommand(workbook, { type: 'SORT_ROWS', payload: { sheetId, columnId, direction: 'DESC' } });
+    const values = result.workbook.sheets[0].rows.map((r) => r.cells[columnId]);
+    expect(values).toEqual(['', 'cereja', 'banana', 'abacaxi']);
+  });
+
+  it('sorts non-blank values ascending, with blanks last', () => {
+    const { workbook, sheetId, columnId } = makeWorkbook(['banana', '', 'abacaxi', 'cereja']);
+    const result = applyCommand(workbook, { type: 'SORT_ROWS', payload: { sheetId, columnId, direction: 'ASC' } });
+    const values = result.workbook.sheets[0].rows.map((r) => r.cells[columnId]);
+    expect(values).toEqual(['abacaxi', 'banana', 'cereja', '']);
+  });
+});
+
+describe('CAST_TO_FLOAT', () => {
+  it('parses Brazilian-formatted decimal strings instead of nulling them out', () => {
+    const { workbook, sheetId, columnId } = makeWorkbook(['1.234,56', '12,5', '3']);
+    const result = applyCommand(workbook, { type: 'CAST_TO_FLOAT', payload: { sheetId, columnId } });
+    const sheet = result.workbook.sheets[0];
+    expect(sheet.rows.map((r) => r.cells[columnId])).toEqual([1234.56, 12.5, 3]);
+  });
+
+  it('falls back to null only for values that are not numeric in either format', () => {
+    const { workbook, sheetId, columnId } = makeWorkbook(['abc', '']);
+    const result = applyCommand(workbook, { type: 'CAST_TO_FLOAT', payload: { sheetId, columnId } });
+    const sheet = result.workbook.sheets[0];
+    expect(sheet.rows.map((r) => r.cells[columnId])).toEqual([null, null]);
+  });
+});
+
+describe('CAST_TO_INTEGER', () => {
+  it('parses Brazilian-formatted decimal strings and truncates them', () => {
+    const { workbook, sheetId, columnId } = makeWorkbook(['1.234,56', '12,9']);
+    const result = applyCommand(workbook, { type: 'CAST_TO_INTEGER', payload: { sheetId, columnId } });
+    const sheet = result.workbook.sheets[0];
+    expect(sheet.rows.map((r) => r.cells[columnId])).toEqual([1234, 12]);
+  });
+});

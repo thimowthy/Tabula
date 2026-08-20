@@ -5,9 +5,11 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  History,
   Inbox,
   Layers,
   Loader2,
+  PencilLine,
   PlayCircle,
   RefreshCw,
   Search,
@@ -16,13 +18,15 @@ import {
   Upload,
   Workflow as WorkflowIcon,
 } from 'lucide-react';
-import { useAuthStore } from '../store/useAuthStore';
+import { isAdmin, useAuthStore } from '../store/useAuthStore';
 import { describeOperation, OPERATION_BADGE } from '../workflow/describe';
 import { listWorkflows, deleteWorkflow, type ServerWorkflow } from '../api/workflowsApi';
 import { ApiError } from '../api/client';
 import { RunWorkflowModal } from './menus/RunWorkflowModal';
 import { PublishWorkflowModal } from './menus/PublishWorkflowModal';
+import { EditWorkflowModal } from './menus/EditWorkflowModal';
 import { ImportAndRunModal } from './menus/ImportAndRunModal';
+import { WorkflowHistoryModal } from './menus/WorkflowHistoryModal';
 
 const UNTAGGED = 'Sem tag';
 
@@ -39,7 +43,7 @@ function groupByTag(workflows: ServerWorkflow[]): [string, ServerWorkflow[]][] {
   return [...groups.entries()].sort(([a], [b]) => (a === UNTAGGED ? 1 : b === UNTAGGED ? -1 : a.localeCompare(b)));
 }
 
-function formatRelativeDate(iso: string): string {
+export function formatRelativeDate(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const diffMin = Math.round(diffMs / 60_000);
   if (diffMin < 1) return 'agora mesmo';
@@ -95,7 +99,9 @@ export function WorkflowsView() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [runningWorkflow, setRunningWorkflow] = useState<ServerWorkflow | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [editingWorkflow, setEditingWorkflow] = useState<ServerWorkflow | null>(null);
   const [importRunWorkflow, setImportRunWorkflow] = useState<ServerWorkflow | null>(null);
+  const [historyWorkflow, setHistoryWorkflow] = useState<ServerWorkflow | null>(null);
 
   async function refresh() {
     setError(null);
@@ -317,8 +323,20 @@ export function WorkflowsView() {
                           onClick={() => setImportRunWorkflow(workflow)}
                           disabled={!hasSteps}
                         />
+                        {authUser && (
+                          <SecondaryButton
+                            icon={PencilLine}
+                            label="Editar"
+                            onClick={() => setEditingWorkflow(workflow)}
+                          />
+                        )}
+                        <SecondaryButton
+                          icon={History}
+                          label="Histórico"
+                          onClick={() => setHistoryWorkflow(workflow)}
+                        />
                         <div className="flex-1" />
-                        {authUser?.id === workflow.creator.id && (
+                        {(authUser?.id === workflow.creator.id || isAdmin(authUser)) && (
                           <SecondaryButton
                             icon={Trash2}
                             label="Excluir workflow"
@@ -358,8 +376,16 @@ export function WorkflowsView() {
         />
       )}
       {publishOpen && <PublishWorkflowModal onClose={() => setPublishOpen(false)} onPublished={() => void refresh()} />}
+      {editingWorkflow && <EditWorkflowModal workflow={editingWorkflow} onClose={() => setEditingWorkflow(null)} />}
       {importRunWorkflow && (
         <ImportAndRunModal workflow={importRunWorkflow} onClose={() => setImportRunWorkflow(null)} />
+      )}
+      {historyWorkflow && (
+        <WorkflowHistoryModal
+          workflow={historyWorkflow}
+          onClose={() => setHistoryWorkflow(null)}
+          onRestored={() => void refresh()}
+        />
       )}
     </div>
   );

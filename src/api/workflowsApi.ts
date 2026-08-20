@@ -6,7 +6,18 @@ export interface ServerWorkflow {
   name: string;
   tags: string[];
   steps: WorkflowOperation[];
+  version: number;
   creator: { id: string; username: string };
+  created_at: string;
+}
+
+export interface ServerWorkflowVersion {
+  version: number;
+  name: string;
+  tags: string[];
+  steps: WorkflowOperation[];
+  changelog: string | null;
+  editor: { id: string; username: string };
   created_at: string;
 }
 
@@ -32,6 +43,14 @@ function fromWire(raw: RawServerWorkflow): ServerWorkflow {
   return { ...raw, steps: fromWireSteps(raw.steps) };
 }
 
+interface RawServerWorkflowVersion extends Omit<ServerWorkflowVersion, 'steps'> {
+  steps: WireStep[];
+}
+
+function versionFromWire(raw: RawServerWorkflowVersion): ServerWorkflowVersion {
+  return { ...raw, steps: fromWireSteps(raw.steps) };
+}
+
 export async function listWorkflows(tag?: string): Promise<ServerWorkflow[]> {
   const query = tag ? `?tag=${encodeURIComponent(tag)}` : '';
   const raw = await apiFetch<RawServerWorkflow[]>(`/workflows${query}`);
@@ -48,6 +67,31 @@ export async function createWorkflow(
     body: { name: input.name, tags: input.tags, steps: toWireSteps(input.steps) },
   });
   return fromWire(raw);
+}
+
+/** Any signed-in user may edit any workflow — the server appends a new
+ * version snapshot rather than overwriting history (see server/.../main.py). */
+export async function updateWorkflow(
+  id: string,
+  input: { name: string; tags: string[]; steps: WorkflowOperation[]; changelog?: string },
+  token: string,
+): Promise<ServerWorkflow> {
+  const raw = await apiFetch<RawServerWorkflow>(`/workflows/${id}`, {
+    method: 'PUT',
+    token,
+    body: {
+      name: input.name,
+      tags: input.tags,
+      steps: toWireSteps(input.steps),
+      changelog: input.changelog?.trim() || null,
+    },
+  });
+  return fromWire(raw);
+}
+
+export async function listWorkflowVersions(id: string): Promise<ServerWorkflowVersion[]> {
+  const raw = await apiFetch<RawServerWorkflowVersion[]>(`/workflows/${id}/versions`);
+  return raw.map(versionFromWire);
 }
 
 export async function deleteWorkflow(id: string, token: string): Promise<void> {

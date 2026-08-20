@@ -88,12 +88,33 @@ def _newly_null_issues(
     return issues
 
 
+def _parse_numeric_series(s: pl.Series) -> pl.Series:
+    """Casts a series to Float64, trying a plain parse first and falling back to
+    Brazilian number formatting ("." thousands separator, "," decimal separator —
+    e.g. "1.234,56") for strings the plain parse rejects. Mirrors _num_or_str's
+    two-try coercion: without the fallback, casting a text column full of values
+    like "12,50" to a number nulls out the entire column instead of parsing it."""
+    name = s.name
+    if s.dtype != pl.Utf8:
+        return s.cast(pl.Float64, strict=False)
+    direct = s.cast(pl.Float64, strict=False)
+    brazilian = (
+        s.str.strip_chars()
+        .str.replace_all(".", "", literal=True)
+        .str.replace(",", ".", literal=True)
+        .cast(pl.Float64, strict=False)
+    )
+    return direct.zip_with(direct.is_not_null(), brazilian).alias(name)
+
+
 def _cast_column(
     df: pl.DataFrame, column: str, target_type: ColumnType, step_id: str | None
 ) -> tuple[pl.DataFrame, list[ExecutionIssue]]:
-    dtype = POLARS_DTYPE[target_type]
     was_present = df[column].is_not_null()
-    casted = df[column].cast(dtype, strict=False)
+    if target_type == ColumnType.NUMBER:
+        casted = _parse_numeric_series(df[column])
+    else:
+        casted = df[column].cast(POLARS_DTYPE[target_type], strict=False)
     newly_null = was_present & casted.is_null()
     return df.with_columns(casted), _newly_null_issues(newly_null, column, target_type.value, step_id)
 
@@ -215,7 +236,7 @@ def _compile_cast_to_integer(df: pl.DataFrame, spec: CastToIntegerOp, step_id: s
     # Route through Float64 first: a bare Utf8 -> Int64 cast rejects decimal-looking
     # strings like "10.7" outright, but "cast to integer" should truncate them, not
     # fail them.
-    casted = df[spec.column].cast(pl.Float64, strict=False).cast(pl.Int64, strict=False)
+    casted = _parse_numeric_series(df[spec.column]).cast(pl.Int64, strict=False)
     newly_null = was_present & casted.is_null()
     return df.with_columns(casted), _newly_null_issues(newly_null, spec.column, "número inteiro", step_id)
 
@@ -223,7 +244,7 @@ def _compile_cast_to_integer(df: pl.DataFrame, spec: CastToIntegerOp, step_id: s
 @register_compiler("cast_to_float")
 def _compile_cast_to_float(df: pl.DataFrame, spec: CastToFloatOp, step_id: str | None):
     was_present = df[spec.column].is_not_null()
-    casted = df[spec.column].cast(pl.Float64, strict=False)
+    casted = _parse_numeric_series(df[spec.column])
     newly_null = was_present & casted.is_null()
     return df.with_columns(casted), _newly_null_issues(newly_null, spec.column, "número decimal", step_id)
 

@@ -11,7 +11,7 @@ function isEmpty(v: CellValue): boolean {
  * fallback, gt/lt on text values like "10,00"/"3,00" silently compare as
  * strings ("10,00" < "3,00", since '1' < '3'), which is essentially never
  * what a numeric comparison is meant to do. */
-function numOrStr(v: CellValue): number | string {
+export function numOrStr(v: CellValue): number | string {
   if (typeof v === 'number') return v;
   if (typeof v !== 'string') return String(v ?? '');
   const trimmed = v.trim();

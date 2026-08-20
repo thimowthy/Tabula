@@ -54,7 +54,14 @@ function sheetToAOA(sheet: SheetModel): CellValue[][] {
 
 export function exportWorkbookToXlsx(workbook: WorkbookModel, filename: string) {
   const wb = XLSX.utils.book_new();
-  for (const sheet of workbook.sheets) {
+  // Excel opens a workbook on its first sheet by default, so the active sheet must be
+  // written first — otherwise a stray blank sheet earlier in `workbook.sheets` (e.g. the
+  // initial placeholder left behind after importing into a new sheet) makes the exported
+  // file look empty even though the sheet the user was viewing has data.
+  const orderedSheets = [...workbook.sheets].sort((a, b) =>
+    a.id === workbook.activeSheetId ? -1 : b.id === workbook.activeSheetId ? 1 : 0,
+  );
+  for (const sheet of orderedSheets) {
     const ws = XLSX.utils.aoa_to_sheet(sheetToAOA(sheet));
     XLSX.utils.book_append_sheet(wb, ws, sheet.name.slice(0, 31) || 'Planilha');
   }

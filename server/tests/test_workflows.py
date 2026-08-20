@@ -57,7 +57,7 @@ def test_get_missing_workflow_404s(client):
     assert resp.status_code == 404
 
 
-def test_only_creator_can_delete_workflow(client, auth_headers):
+def test_only_creator_or_admin_can_delete_workflow(client, auth_headers, make_admin):
     ana_headers = auth_headers("ana")
     bruno_headers = auth_headers("bruno")
     created = client.post("/workflows", json={"name": "A", "tags": [], "steps": []}, headers=ana_headers)
@@ -70,3 +70,85 @@ def test_only_creator_can_delete_workflow(client, auth_headers):
     assert allowed.status_code == 204
 
     assert client.get(f"/workflows/{workflow_id}").status_code == 404
+
+
+def test_admin_can_delete_workflow_created_by_someone_else(client, auth_headers, make_admin):
+    ana_headers = auth_headers("ana")
+    root_headers = auth_headers("root")
+    make_admin("root")
+
+    created = client.post("/workflows", json={"name": "A", "tags": [], "steps": []}, headers=ana_headers)
+    workflow_id = created.json()["id"]
+
+    resp = client.delete(f"/workflows/{workflow_id}", headers=root_headers)
+    assert resp.status_code == 204
+    assert client.get(f"/workflows/{workflow_id}").status_code == 404
+
+
+def test_update_workflow_requires_auth(client, auth_headers):
+    ana_headers = auth_headers("ana")
+    created = client.post("/workflows", json={"name": "A", "tags": [], "steps": []}, headers=ana_headers)
+    workflow_id = created.json()["id"]
+
+    resp = client.put(f"/workflows/{workflow_id}", json={"name": "B", "tags": [], "steps": []})
+    assert resp.status_code == 401
+
+
+def test_anyone_signed_in_can_edit_any_workflow(client, auth_headers):
+    ana_headers = auth_headers("ana")
+    bruno_headers = auth_headers("bruno")
+    created = client.post("/workflows", json={"name": "A", "tags": ["x"], "steps": []}, headers=ana_headers)
+    workflow_id = created.json()["id"]
+    assert created.json()["version"] == 1
+
+    resp = client.put(
+        f"/workflows/{workflow_id}",
+        json={"name": "A editado", "tags": ["x", "y"], "steps": [], "changelog": "ajustei as tags"},
+        headers=bruno_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["name"] == "A editado"
+    assert body["tags"] == ["x", "y"]
+    assert body["version"] == 2
+    # creator stays the original publisher even though bruno made the edit
+    assert body["creator"]["username"] == "ana"
+
+
+def test_editing_workflow_appends_a_version_and_keeps_history(client, auth_headers):
+    ana_headers = auth_headers("ana")
+    bruno_headers = auth_headers("bruno")
+    created = client.post(
+        "/workflows",
+        json={"name": "A", "tags": [], "steps": [{"id": "s1", "operation_type": "trim_whitespace", "params": {}}]},
+        headers=ana_headers,
+    )
+    workflow_id = created.json()["id"]
+
+    client.put(
+        f"/workflows/{workflow_id}",
+        json={"name": "A v2", "tags": [], "steps": [], "changelog": "removi a etapa"},
+        headers=bruno_headers,
+    )
+
+    versions = client.get(f"/workflows/{workflow_id}/versions")
+    assert versions.status_code == 200
+    body = versions.json()
+    assert [v["version"] for v in body] == [2, 1]
+    assert body[0]["changelog"] == "removi a etapa"
+    assert body[0]["editor"]["username"] == "bruno"
+    assert body[1]["editor"]["username"] == "ana"
+    assert len(body[1]["steps"]) == 1
+
+    v1 = client.get(f"/workflows/{workflow_id}/versions/1")
+    assert v1.status_code == 200
+    assert v1.json()["name"] == "A"
+
+    missing = client.get(f"/workflows/{workflow_id}/versions/99")
+    assert missing.status_code == 404
+
+
+def test_update_missing_workflow_404s(client, auth_headers):
+    headers = auth_headers("ana")
+    resp = client.put("/workflows/does-not-exist", json={"name": "A", "tags": [], "steps": []}, headers=headers)
+    assert resp.status_code == 404

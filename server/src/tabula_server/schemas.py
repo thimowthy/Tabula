@@ -22,6 +22,7 @@ class UserCredentials(BaseModel):
 class UserPublic(BaseModel):
     id: str
     username: str
+    role: str
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -67,12 +68,54 @@ class WorkflowCreate(BaseModel):
         return list(seen.keys())
 
 
+class WorkflowUpdate(BaseModel):
+    """Full replacement of a workflow's current state — editing appends a new
+    ``WorkflowVersion`` snapshot rather than mutating history, so this carries
+    the complete next state, not a partial patch."""
+
+    name: str = Field(min_length=1, max_length=200)
+    tags: list[str] = Field(default_factory=list)
+    steps: list[WorkflowStep] = Field(default_factory=list)
+    changelog: str | None = Field(default=None, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name cannot be blank")
+        return v
+
+    @field_validator("tags")
+    @classmethod
+    def _normalize_tags(cls, tags: list[str]) -> list[str]:
+        seen: dict[str, None] = {}
+        for tag in tags:
+            cleaned = tag.strip()
+            if cleaned:
+                seen.setdefault(cleaned, None)
+        return list(seen.keys())
+
+
 class WorkflowPublic(BaseModel):
     id: str
     name: str
     tags: list[str]
     steps: list[WorkflowStep]
+    version: int
     creator: UserPublic
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkflowVersionPublic(BaseModel):
+    version: int
+    name: str
+    tags: list[str]
+    steps: list[WorkflowStep]
+    changelog: str | None
+    editor: UserPublic
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

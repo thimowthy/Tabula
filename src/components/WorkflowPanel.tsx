@@ -23,6 +23,7 @@ import { AddColumnModal } from './menus/AddColumnModal';
 import { FilterStepModal } from './menus/FilterStepModal';
 import { WhenModal } from './menus/WhenModal';
 import { CastTypeStepModal } from './menus/CastTypeStepModal';
+import { SaveWorkflowVersionPanel } from './menus/SaveWorkflowVersionPanel';
 
 const MIN_WIDTH = 220;
 const MAX_WIDTH = 640;
@@ -59,6 +60,8 @@ export function WorkflowPanel() {
   const sheet = useActiveSheet();
   const documentName = useWorkbookStore((s) => s.documentName);
   const dispatch = useWorkbookStore((s) => s.dispatch);
+  const editingServerWorkflow = useWorkbookStore((s) => s.editingServerWorkflow);
+  const boundWorkflow = editingServerWorkflow?.sheetId === sheet.id ? editingServerWorkflow : null;
   const [width, setWidth] = useState(320);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const [editingStep, setEditingStep] = useState<WorkflowOperation | null>(null);
@@ -380,6 +383,8 @@ export function WorkflowPanel() {
           Para validar a formatação resultante da planilha, use Arquivo → Exportar.
         </p>
       </div>
+
+      {boundWorkflow && <SaveWorkflowVersionPanel key={boundWorkflow.id} sheet={sheet} binding={boundWorkflow} />}
 
       {renderEditModal()}
     </div>

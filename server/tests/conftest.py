@@ -34,6 +34,9 @@ def client():
     app.dependency_overrides[get_db] = override_get_db
     try:
         with TestClient(app) as test_client:
+            # Exposed so tests can reach into the DB directly for things no
+            # API endpoint does on purpose (e.g. granting the admin role).
+            test_client.SessionLocal = TestingSessionLocal  # type: ignore[attr-defined]
             yield test_client
     finally:
         app.dependency_overrides.clear()
@@ -48,3 +51,22 @@ def auth_headers(client: TestClient):
         return {"Authorization": f"Bearer {token}"}
 
     return _register
+
+
+@pytest.fixture()
+def make_admin(client: TestClient):
+    """Flips a already-registered user's role to "admin" directly in the DB —
+    there's intentionally no API endpoint that does this (see main._seed_admin)."""
+
+    def _make_admin(username: str) -> None:
+        from tabula_server import models
+
+        db = client.SessionLocal()  # type: ignore[attr-defined]
+        try:
+            user = db.query(models.User).filter(models.User.username == username).one()
+            user.role = "admin"
+            db.commit()
+        finally:
+            db.close()
+
+    return _make_admin

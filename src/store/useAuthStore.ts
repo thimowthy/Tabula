@@ -4,6 +4,11 @@ import { apiFetch, ApiError } from '../api/client';
 export interface AuthUser {
   id: string;
   username: string;
+  role: string;
+}
+
+export function isAdmin(user: AuthUser | null): boolean {
+  return user?.role === 'admin';
 }
 
 interface TokenResponse {

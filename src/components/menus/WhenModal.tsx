@@ -165,7 +165,7 @@ export function WhenModal({ onClose, onApply, initialParams, onSaveDefinition }:
               <ConditionEditor columns={sheet.columns} value={c.condition} onChange={(condition) => updateCase(i, { condition })} />
             </div>
             <BranchOperationsEditor
-              columns={sheet.columns}
+              sheet={sheet}
               operations={c.operations}
               onChange={(operations) => updateCase(i, { operations })}
             />
@@ -181,7 +181,7 @@ export function WhenModal({ onClose, onApply, initialParams, onSaveDefinition }:
             Senão (linhas que não bateram em nenhum caso)
           </label>
           {hasDefault && (
-            <BranchOperationsEditor columns={sheet.columns} operations={defaultOperations} onChange={setDefaultOperations} />
+            <BranchOperationsEditor sheet={sheet} operations={defaultOperations} onChange={setDefaultOperations} />
           )}
         </div>
 

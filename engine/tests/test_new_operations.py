@@ -23,6 +23,28 @@ def test_cast_to_integer_and_float():
     assert outcome2.table.rows[0]["qtd"] == 10.7
 
 
+def test_cast_to_float_parses_brazilian_decimal_format():
+    table = _table(
+        [CanonicalColumn(name="preco", type=ColumnType.TEXT)],
+        [{"preco": "1.234,56"}, {"preco": "12,5"}, {"preco": "3"}, {"preco": "abc"}],
+    )
+    outcome = PolarsExecutor().run(table, [Step(operation_type="cast_to_float", params={"column": "preco"})])
+    assert outcome.table.rows[0]["preco"] == 1234.56
+    assert outcome.table.rows[1]["preco"] == 12.5
+    assert outcome.table.rows[2]["preco"] == 3
+    assert outcome.table.rows[3]["preco"] is None
+    assert len(outcome.issues) == 1
+
+
+def test_cast_to_integer_parses_brazilian_decimal_format():
+    table = _table(
+        [CanonicalColumn(name="qtd", type=ColumnType.TEXT)],
+        [{"qtd": "1.234,56"}],
+    )
+    outcome = PolarsExecutor().run(table, [Step(operation_type="cast_to_integer", params={"column": "qtd"})])
+    assert outcome.table.rows[0]["qtd"] == 1234
+
+
 def test_cast_to_datetime():
     table = _table(
         [CanonicalColumn(name="quando", type=ColumnType.TEXT)],
