@@ -9,6 +9,7 @@ export interface ServerWorkflow {
   version: number;
   creator: { id: string; username: string };
   created_at: string;
+  isFavorite: boolean;
 }
 
 export interface ServerWorkflowVersion {
@@ -35,12 +36,13 @@ function fromWireSteps(steps: WireStep[]): WorkflowOperation[] {
   return steps.map((s) => ({ id: s.id, type: s.operation_type, params: s.params }) as WorkflowOperation);
 }
 
-interface RawServerWorkflow extends Omit<ServerWorkflow, 'steps'> {
+interface RawServerWorkflow extends Omit<ServerWorkflow, 'steps' | 'isFavorite'> {
   steps: WireStep[];
+  is_favorite: boolean;
 }
 
 function fromWire(raw: RawServerWorkflow): ServerWorkflow {
-  return { ...raw, steps: fromWireSteps(raw.steps) };
+  return { ...raw, steps: fromWireSteps(raw.steps), isFavorite: raw.is_favorite };
 }
 
 interface RawServerWorkflowVersion extends Omit<ServerWorkflowVersion, 'steps'> {
@@ -51,9 +53,9 @@ function versionFromWire(raw: RawServerWorkflowVersion): ServerWorkflowVersion {
   return { ...raw, steps: fromWireSteps(raw.steps) };
 }
 
-export async function listWorkflows(tag?: string): Promise<ServerWorkflow[]> {
+export async function listWorkflows(tag?: string, token?: string): Promise<ServerWorkflow[]> {
   const query = tag ? `?tag=${encodeURIComponent(tag)}` : '';
-  const raw = await apiFetch<RawServerWorkflow[]>(`/workflows${query}`);
+  const raw = await apiFetch<RawServerWorkflow[]>(`/workflows${query}`, { token });
   return raw.map(fromWire);
 }
 
@@ -96,4 +98,14 @@ export async function listWorkflowVersions(id: string): Promise<ServerWorkflowVe
 
 export async function deleteWorkflow(id: string, token: string): Promise<void> {
   await apiFetch<void>(`/workflows/${id}`, { method: 'DELETE', token });
+}
+
+export async function favoriteWorkflow(id: string, token: string): Promise<ServerWorkflow> {
+  const raw = await apiFetch<RawServerWorkflow>(`/workflows/${id}/favorite`, { method: 'POST', token });
+  return fromWire(raw);
+}
+
+export async function unfavoriteWorkflow(id: string, token: string): Promise<ServerWorkflow> {
+  const raw = await apiFetch<RawServerWorkflow>(`/workflows/${id}/favorite`, { method: 'DELETE', token });
+  return fromWire(raw);
 }

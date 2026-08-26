@@ -9,12 +9,13 @@
   --color-text: #1f2328;
   --color-text-muted: #63697466;
   --color-text-subtle: #6b7280;
-  --color-accent: #2563eb;
-  --color-accent-soft: #2563eb1f;
+  --color-accent: #7e14ff;
+  --color-accent-2: #47bfff;
+  --color-accent-soft: #7e14ff1f;
   --color-header-bg: #eef1f5;
   --color-coord-bg: #f3f4f6;
-  --color-selection: #2563eb26;
-  --color-selection-border: #2563eb;
+  --color-selection: #7e14ff26;
+  --color-selection-border: #7e14ff;
   --color-danger: #dc2626;
 
   color-scheme: light dark;
@@ -31,12 +32,13 @@
     --color-text: #e6e7ea;
     --color-text-muted: #9aa0aa66;
     --color-text-subtle: #9aa0aa;
-    --color-accent: #5b8def;
-    --color-accent-soft: #5b8def26;
+    --color-accent: #a374ff;
+    --color-accent-2: #5cc9ff;
+    --color-accent-soft: #a374ff26;
     --color-header-bg: #2a2d34;
     --color-coord-bg: #232529;
-    --color-selection: #5b8def26;
-    --color-selection-border: #5b8def;
+    --color-selection: #a374ff26;
+    --color-selection-border: #a374ff;
     --color-danger: #f87171;
   }
 }
@@ -59,4 +61,45 @@ body {
 
 button {
   font: inherit;
+}
+
+.tabula-brand-mark {
+  transition:
+    transform 350ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 350ms ease;
+}
+
+.tabula-brand:hover .tabula-brand-mark {
+  transform: rotate(-10deg) scale(1.15);
+  filter: drop-shadow(0 0 6px var(--color-accent-soft));
+}
+
+.tabula-brand-text {
+  background: linear-gradient(90deg, #a855f7, #7e14ff 45%, #47bfff);
+  background-size: 220% 100%;
+  background-position: 0% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  transition: background-position 600ms ease;
+}
+
+.tabula-brand:hover .tabula-brand-text {
+  background-position: 100% 50%;
+}
+
+@keyframes tabula-menu-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.tabula-menu-pop {
+  transform-origin: top;
+  animation: tabula-menu-pop 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }

@@ -13,6 +13,7 @@ import {
   PlayCircle,
   RefreshCw,
   Search,
+  Star,
   Tag,
   Trash2,
   Upload,
@@ -20,7 +21,7 @@ import {
 } from 'lucide-react';
 import { isAdmin, useAuthStore } from '../store/useAuthStore';
 import { describeOperation, OPERATION_BADGE } from '../workflow/describe';
-import { listWorkflows, deleteWorkflow, type ServerWorkflow } from '../api/workflowsApi';
+import { listWorkflows, deleteWorkflow, favoriteWorkflow, unfavoriteWorkflow, type ServerWorkflow } from '../api/workflowsApi';
 import { ApiError } from '../api/client';
 import { RunWorkflowModal } from './menus/RunWorkflowModal';
 import { PublishWorkflowModal } from './menus/PublishWorkflowModal';
@@ -91,11 +92,13 @@ function SecondaryButton({
  * the steps a sheet accumulates locally while being edited. */
 export function WorkflowsView() {
   const authUser = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
 
   const [workflows, setWorkflows] = useState<ServerWorkflow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [runningWorkflow, setRunningWorkflow] = useState<ServerWorkflow | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
@@ -107,7 +110,7 @@ export function WorkflowsView() {
     setError(null);
     setRefreshing(true);
     try {
-      setWorkflows(await listWorkflows());
+      setWorkflows(await listWorkflows(undefined, useAuthStore.getState().token ?? undefined));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Não foi possível carregar os workflows.');
     } finally {
@@ -115,9 +118,12 @@ export function WorkflowsView() {
     }
   }
 
+  // Re-fetch whenever the signed-in user changes — favorites are personal,
+  // so the previous user's session shouldn't leak into the next one's view.
   useEffect(() => {
     void refresh();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   function toggleExpanded(id: string) {
     setExpandedIds((prev) => {
@@ -129,34 +135,58 @@ export function WorkflowsView() {
   }
 
   async function handleDelete(workflow: ServerWorkflow) {
-    const token = useAuthStore.getState().token;
-    if (!token) return;
+    const currentToken = useAuthStore.getState().token;
+    if (!currentToken) return;
     if (!window.confirm(`Excluir o workflow "${workflow.name}"?`)) return;
     try {
-      await deleteWorkflow(workflow.id, token);
+      await deleteWorkflow(workflow.id, currentToken);
       await refresh();
     } catch (err) {
       window.alert(err instanceof ApiError ? err.message : 'Não foi possível excluir o workflow.');
     }
   }
 
+  async function handleToggleFavorite(workflow: ServerWorkflow) {
+    const currentToken = useAuthStore.getState().token;
+    if (!currentToken) return;
+    const nextFavorite = !workflow.isFavorite;
+    setWorkflows((prev) => prev?.map((w) => (w.id === workflow.id ? { ...w, isFavorite: nextFavorite } : w)) ?? prev);
+    try {
+      if (nextFavorite) await favoriteWorkflow(workflow.id, currentToken);
+      else await unfavoriteWorkflow(workflow.id, currentToken);
+    } catch (err) {
+      setWorkflows((prev) => prev?.map((w) => (w.id === workflow.id ? { ...w, isFavorite: workflow.isFavorite } : w)) ?? prev);
+      window.alert(err instanceof ApiError ? err.message : 'Não foi possível atualizar o favorito.');
+    }
+  }
+
   const query = search.trim().toLowerCase();
-  const filtered = workflows ? workflows.filter((w) => w.name.toLowerCase().includes(query)) : [];
+  const favoriteCount = workflows?.filter((w) => w.isFavorite).length ?? 0;
+  const filtered = workflows
+    ? workflows
+        .filter((w) => w.name.toLowerCase().includes(query) && (!favoritesOnly || w.isFavorite))
+        .sort((a, b) => Number(b.isFavorite) - Number(a.isFavorite))
+    : [];
   const grouped = groupByTag(filtered);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+    <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
       <div className="mx-auto max-w-3xl">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="flex items-center gap-2 text-[18px] font-semibold text-[var(--color-text)]">
-              <WorkflowIcon size={17} style={{ color: 'var(--color-accent)' }} />
-              Workflows
-            </h1>
-            <p className="mt-1 max-w-md text-[13px] leading-relaxed text-[var(--color-text-subtle)]">
-              Workflows publicados por tag, com nome e criador. Publique um a partir das etapas gravadas numa aba,
-              ou execute um já existente aqui.
-            </p>
+          <div className="flex items-start gap-3">
+            <div
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+              style={{ background: 'var(--color-accent-soft)' }}
+            >
+              <WorkflowIcon size={19} style={{ color: 'var(--color-accent)' }} />
+            </div>
+            <div>
+              <h1 className="text-[20px] font-semibold tracking-tight text-[var(--color-text)]">Workflows</h1>
+              <p className="mt-0.5 max-w-md text-[13px] leading-relaxed text-[var(--color-text-subtle)]">
+                Publique etapas gravadas numa aba, favorite o que você usa com frequência e execute em qualquer
+                planilha.
+              </p>
+            </div>
           </div>
           <div className="flex shrink-0 gap-1.5">
             <button
@@ -183,19 +213,46 @@ export function WorkflowsView() {
         </div>
 
         {workflows !== null && workflows.length > 0 && (
-          <div className="relative mt-4">
-            <Search
-              size={14}
-              className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2"
-              style={{ color: 'var(--color-text-subtle)' }}
-            />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar workflow por nome…"
-              className="w-full rounded-md border py-1.5 pr-3 pl-8 text-[13px] outline-none"
-              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
-            />
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[220px] flex-1">
+              <Search
+                size={14}
+                className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2"
+                style={{ color: 'var(--color-text-subtle)' }}
+              />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar workflow por nome…"
+                className="w-full rounded-md border py-1.5 pr-3 pl-8 text-[13px] outline-none"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setFavoritesOnly((v) => !v)}
+              disabled={favoriteCount === 0}
+              className="flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-medium disabled:opacity-40"
+              style={{
+                borderColor: favoritesOnly ? 'var(--color-accent)' : 'var(--color-border)',
+                color: favoritesOnly ? 'var(--color-accent)' : 'var(--color-text)',
+                background: favoritesOnly ? 'var(--color-accent-soft)' : 'transparent',
+              }}
+            >
+              <Star size={13} fill={favoritesOnly ? 'currentColor' : 'none'} />
+              Favoritos
+              {favoriteCount > 0 && (
+                <span
+                  className="rounded-full px-1.5 py-px text-[10px] font-normal"
+                  style={{
+                    background: favoritesOnly ? 'var(--color-accent)' : 'var(--color-surface)',
+                    color: favoritesOnly ? 'white' : 'var(--color-text-subtle)',
+                  }}
+                >
+                  {favoriteCount}
+                </span>
+              )}
+            </button>
           </div>
         )}
 
@@ -232,7 +289,9 @@ export function WorkflowsView() {
 
         {workflows !== null && workflows.length > 0 && grouped.length === 0 && (
           <p className="mt-10 text-center text-[13px] text-[var(--color-text-subtle)]">
-            Nenhum workflow encontrado para "{search.trim()}".
+            {search.trim()
+              ? `Nenhum workflow encontrado para "${search.trim()}".`
+              : 'Nenhum workflow favoritado ainda.'}
           </p>
         )}
 
@@ -260,43 +319,59 @@ export function WorkflowsView() {
                     <div
                       key={workflow.id}
                       className="rounded-xl border px-4 py-3.5 transition-shadow hover:shadow-sm"
-                      style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)' }}
+                      style={{
+                        borderColor: workflow.isFavorite ? 'var(--color-accent)' : 'var(--color-border)',
+                        background: workflow.isFavorite ? 'var(--color-accent-soft)' : 'var(--color-bg)',
+                      }}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <p className="truncate text-[14px] font-semibold text-[var(--color-text)]">{workflow.name}</p>
-                            {workflow.tags.map((t) => (
-                              <span
-                                key={t}
-                                className="rounded-full px-1.5 py-px text-[10px]"
-                                style={{ background: 'var(--color-accent-soft)', color: 'var(--color-accent)' }}
-                              >
-                                {t}
+                        <div className="flex min-w-0 items-start gap-2">
+                          {authUser && (
+                            <button
+                              type="button"
+                              onClick={() => void handleToggleFavorite(workflow)}
+                              title={workflow.isFavorite ? 'Remover dos favoritos' : 'Favoritar'}
+                              className="mt-0.5 shrink-0 rounded p-0.5 hover:bg-[var(--color-surface-hover)]"
+                              style={{ color: workflow.isFavorite ? 'var(--color-accent)' : 'var(--color-text-subtle)' }}
+                            >
+                              <Star size={15} fill={workflow.isFavorite ? 'currentColor' : 'none'} />
+                            </button>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <p className="truncate text-[14px] font-semibold text-[var(--color-text)]">{workflow.name}</p>
+                              {workflow.tags.map((t) => (
+                                <span
+                                  key={t}
+                                  className="rounded-full px-1.5 py-px text-[10px]"
+                                  style={{ background: 'var(--color-bg)', color: 'var(--color-accent)' }}
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                            <div
+                              className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]"
+                              style={{ color: 'var(--color-text-subtle)' }}
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <span
+                                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold"
+                                  style={{ background: 'var(--color-bg)', color: 'var(--color-accent)' }}
+                                >
+                                  {workflow.creator.username.charAt(0).toUpperCase()}
+                                </span>
+                                {workflow.creator.username}
                               </span>
-                            ))}
-                          </div>
-                          <div
-                            className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]"
-                            style={{ color: 'var(--color-text-subtle)' }}
-                          >
-                            <span className="flex items-center gap-1.5">
-                              <span
-                                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold"
-                                style={{ background: 'var(--color-accent-soft)', color: 'var(--color-accent)' }}
-                              >
-                                {workflow.creator.username.charAt(0).toUpperCase()}
+                              <span className="flex items-center gap-1">
+                                <Layers size={11} />
+                                {workflow.steps.length} etapa{workflow.steps.length === 1 ? '' : 's'}
                               </span>
-                              {workflow.creator.username}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Layers size={11} />
-                              {workflow.steps.length} etapa{workflow.steps.length === 1 ? '' : 's'}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Clock size={11} />
-                              {formatRelativeDate(workflow.created_at)}
-                            </span>
+                              <span className="flex items-center gap-1">
+                                <Clock size={11} />
+                                {formatRelativeDate(workflow.created_at)}
+                              </span>
+                            </div>
                           </div>
                         </div>
                         <button

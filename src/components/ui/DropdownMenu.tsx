@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import type { LucideIcon } from 'lucide-react';
 
 export interface MenuItem {
   label: string;
+  icon?: LucideIcon;
   onSelect?: () => void;
   danger?: boolean;
   disabled?: boolean;
@@ -13,11 +15,14 @@ interface DropdownMenuProps {
   trigger: ReactNode;
   items: MenuItem[];
   align?: 'left' | 'right';
+  /** Opens the menu on hover (with a short close delay) in addition to click — used for the Tabula brand menu. */
+  openOnHover?: boolean;
 }
 
-export function DropdownMenu({ trigger, items, align = 'left' }: DropdownMenuProps) {
+export function DropdownMenu({ trigger, items, align = 'left', openOnHover = false }: DropdownMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -35,8 +40,26 @@ export function DropdownMenu({ trigger, items, align = 'left' }: DropdownMenuPro
     };
   }, [open]);
 
+  useEffect(() => () => {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+  }, []);
+
+  function handleMouseEnter() {
+    if (!openOnHover) return;
+    if (closeTimer.current) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    setOpen(true);
+  }
+
+  function handleMouseLeave() {
+    if (!openOnHover) return;
+    closeTimer.current = window.setTimeout(() => setOpen(false), 150);
+  }
+
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative" ref={ref} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -47,7 +70,7 @@ export function DropdownMenu({ trigger, items, align = 'left' }: DropdownMenuPro
       </button>
       {open && (
         <div
-          className={`absolute top-full z-50 mt-1 max-h-[70vh] min-w-[190px] overflow-y-auto rounded-md border py-1 shadow-lg ${align === 'right' ? 'right-0' : 'left-0'}`}
+          className={`tabula-menu-pop absolute top-full z-50 mt-1 max-h-[70vh] min-w-[190px] overflow-y-auto rounded-md border py-1 shadow-lg ${align === 'right' ? 'right-0' : 'left-0'}`}
           style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)' }}
         >
           {items.map((item, i) =>
@@ -62,11 +85,12 @@ export function DropdownMenu({ trigger, items, align = 'left' }: DropdownMenuPro
                   item.onSelect?.();
                   setOpen(false);
                 }}
-                className="block w-full px-3 py-1.5 text-left text-[13px] disabled:opacity-40"
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] disabled:opacity-40"
                 style={{ color: item.danger ? 'var(--color-danger)' : 'var(--color-text)' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-surface-hover)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
+                {item.icon && <item.icon size={14} className="shrink-0" style={{ color: 'var(--color-text-subtle)' }} />}
                 {item.label}
               </button>
             ),

@@ -71,7 +71,7 @@ export const useWorkbookStore = create<WorkbookStore>((set, get) => ({
   documentName: 'Sem título',
   workflowPanelOpen: false,
   shortcutsModalOpen: false,
-  view: 'editor',
+  view: 'workflows',
   editingServerWorkflow: null,
 
   dispatch: (command) => {

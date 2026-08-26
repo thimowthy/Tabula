@@ -85,3 +85,14 @@ class WorkflowVersion(Base):
 
     workflow: Mapped["Workflow"] = relationship(back_populates="versions")
     editor: Mapped["User"] = relationship()
+
+
+class WorkflowFavorite(Base):
+    """A user's personal bookmark on a workflow — purely a per-user marker,
+    doesn't affect the workflow itself or anyone else's view of it."""
+
+    __tablename__ = "workflow_favorites"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

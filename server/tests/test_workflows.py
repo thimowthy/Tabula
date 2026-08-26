@@ -152,3 +152,51 @@ def test_update_missing_workflow_404s(client, auth_headers):
     headers = auth_headers("ana")
     resp = client.put("/workflows/does-not-exist", json={"name": "A", "tags": [], "steps": []}, headers=headers)
     assert resp.status_code == 404
+
+
+def test_favorite_requires_auth(client, auth_headers):
+    ana_headers = auth_headers("ana")
+    created = client.post("/workflows", json={"name": "A", "tags": [], "steps": []}, headers=ana_headers)
+    workflow_id = created.json()["id"]
+
+    resp = client.post(f"/workflows/{workflow_id}/favorite")
+    assert resp.status_code == 401
+
+
+def test_favorite_is_personal_and_toggleable(client, auth_headers):
+    ana_headers = auth_headers("ana")
+    bruno_headers = auth_headers("bruno")
+    created = client.post("/workflows", json={"name": "A", "tags": [], "steps": []}, headers=ana_headers)
+    workflow_id = created.json()["id"]
+
+    fav = client.post(f"/workflows/{workflow_id}/favorite", headers=bruno_headers)
+    assert fav.status_code == 200, fav.text
+    assert fav.json()["is_favorite"] is True
+
+    # Favoriting again is a no-op, not an error.
+    fav_again = client.post(f"/workflows/{workflow_id}/favorite", headers=bruno_headers)
+    assert fav_again.status_code == 200
+    assert fav_again.json()["is_favorite"] is True
+
+    # It's bruno's favorite, not ana's, and not visible to anonymous callers.
+    listed_bruno = client.get("/workflows", headers=bruno_headers)
+    assert next(w for w in listed_bruno.json() if w["id"] == workflow_id)["is_favorite"] is True
+    listed_ana = client.get("/workflows", headers=ana_headers)
+    assert next(w for w in listed_ana.json() if w["id"] == workflow_id)["is_favorite"] is False
+    listed_anon = client.get("/workflows")
+    assert next(w for w in listed_anon.json() if w["id"] == workflow_id)["is_favorite"] is False
+
+    unfav = client.delete(f"/workflows/{workflow_id}/favorite", headers=bruno_headers)
+    assert unfav.status_code == 200
+    assert unfav.json()["is_favorite"] is False
+
+    # Unfavoriting again is also a no-op.
+    unfav_again = client.delete(f"/workflows/{workflow_id}/favorite", headers=bruno_headers)
+    assert unfav_again.status_code == 200
+    assert unfav_again.json()["is_favorite"] is False
+
+
+def test_favorite_missing_workflow_404s(client, auth_headers):
+    headers = auth_headers("ana")
+    resp = client.post("/workflows/does-not-exist/favorite", headers=headers)
+    assert resp.status_code == 404

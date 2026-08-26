@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Keyboard, ListChecks, PlayCircle, Redo2, UserCircle2, Undo2 } from 'lucide-react';
+import { FileSpreadsheet, Keyboard, ListChecks, PlayCircle, Redo2, UserCircle2, Undo2, Workflow } from 'lucide-react';
 import { useActiveSheet, useWorkbookStore } from '../store/useWorkbookStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { Logo } from './Logo';
 import { FileMenu } from './menus/FileMenu';
 import { RunWorkflowModal } from './menus/RunWorkflowModal';
 import { AuthModal } from './menus/AuthModal';
@@ -43,14 +44,16 @@ export function Toolbar() {
     >
       <div className="mr-2 flex shrink-0 items-center pl-1">
         <DropdownMenu
+          openOnHover
           trigger={
-            <span className="text-[15px] font-semibold" style={{ color: 'var(--color-accent)' }}>
-              Tabula
+            <span className="tabula-brand flex items-center gap-1.5">
+              <Logo className="tabula-brand-mark h-[18px] w-[18px]" />
+              <span className="tabula-brand-text text-[15px] font-bold tracking-tight">Tabula</span>
             </span>
           }
           items={[
-            { label: 'Editor', onSelect: () => setView('editor') },
-            { label: 'Workflows', onSelect: () => setView('workflows') },
+            { label: 'Editor', icon: FileSpreadsheet, onSelect: () => setView('editor') },
+            { label: 'Workflows', icon: Workflow, onSelect: () => setView('workflows') },
           ]}
         />
       </div>

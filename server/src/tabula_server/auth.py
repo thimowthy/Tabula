@@ -29,3 +29,18 @@ def get_current_user(
     if user is None:
         raise unauthorized
     return user
+
+
+def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    db: Session = Depends(get_db),
+) -> models.User | None:
+    """Same lookup as ``get_current_user`` but never raises — for endpoints
+    that stay public (browsing the catalog) yet personalize their response
+    (e.g. ``is_favorite``) when a token happens to be present."""
+    if credentials is None:
+        return None
+    user_id = decode_access_token(credentials.credentials)
+    if user_id is None:
+        return None
+    return db.get(models.User, user_id)

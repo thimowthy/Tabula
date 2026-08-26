@@ -105,6 +105,10 @@ class WorkflowPublic(BaseModel):
     version: int
     creator: UserPublic
     created_at: datetime
+    # Not a mapped column — the endpoint stamps this onto the ORM instance
+    # per-request based on the caller's own favorites, since the same
+    # workflow row is shared by every viewer.
+    is_favorite: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

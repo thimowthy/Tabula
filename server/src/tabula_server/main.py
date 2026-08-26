@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import models, schemas
-from .auth import get_current_user
+from .auth import get_current_user, get_current_user_optional
 from .database import SessionLocal, get_db, init_db
 from .security import create_access_token, hash_password, verify_password
 
@@ -92,24 +92,49 @@ def me(current_user: models.User = Depends(get_current_user)) -> schemas.UserPub
     return schemas.UserPublic.model_validate(current_user)
 
 
+def _mark_favorites(db: Session, workflows: list[models.Workflow], current_user: models.User | None) -> None:
+    """Stamps ``is_favorite`` (not a mapped column, see WorkflowPublic) onto
+    each workflow based on the caller's own favorites — a no-op for
+    anonymous requests, which just get ``False`` from the schema default."""
+    if not current_user or not workflows:
+        return
+    stmt = select(models.WorkflowFavorite.workflow_id).where(
+        models.WorkflowFavorite.user_id == current_user.id,
+        models.WorkflowFavorite.workflow_id.in_([w.id for w in workflows]),
+    )
+    favorited_ids = set(db.execute(stmt).scalars().all())
+    for workflow in workflows:
+        workflow.is_favorite = workflow.id in favorited_ids
+
+
 @app.get("/workflows", response_model=list[schemas.WorkflowPublic])
-def list_workflows(tag: str | None = None, db: Session = Depends(get_db)) -> list[models.Workflow]:
+def list_workflows(
+    tag: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: models.User | None = Depends(get_current_user_optional),
+) -> list[models.Workflow]:
     """Public read — browsing/running the catalog needs no login, only
     publishing to it does. Filters client-side-friendly: pass ``tag`` to get
     just the workflows carrying it, or omit it to list everything (the
     frontend groups the full list by tag itself)."""
     stmt = select(models.Workflow).order_by(models.Workflow.created_at.desc())
-    workflows = db.execute(stmt).scalars().all()
+    workflows = list(db.execute(stmt).scalars().all())
     if tag:
         workflows = [w for w in workflows if tag in w.tags]
-    return list(workflows)
+    _mark_favorites(db, workflows, current_user)
+    return workflows
 
 
 @app.get("/workflows/{workflow_id}", response_model=schemas.WorkflowPublic)
-def get_workflow(workflow_id: str, db: Session = Depends(get_db)) -> models.Workflow:
+def get_workflow(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User | None = Depends(get_current_user_optional),
+) -> models.Workflow:
     workflow = db.get(models.Workflow, workflow_id)
     if workflow is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow não encontrado.")
+    _mark_favorites(db, [workflow], current_user)
     return workflow
 
 
@@ -178,6 +203,41 @@ def update_workflow(
     workflow.version = next_version
     db.commit()
     db.refresh(workflow)
+    _mark_favorites(db, [workflow], current_user)
+    return workflow
+
+
+@app.post("/workflows/{workflow_id}/favorite", response_model=schemas.WorkflowPublic)
+def favorite_workflow(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> models.Workflow:
+    workflow = db.get(models.Workflow, workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow não encontrado.")
+    existing = db.get(models.WorkflowFavorite, (current_user.id, workflow_id))
+    if existing is None:
+        db.add(models.WorkflowFavorite(user_id=current_user.id, workflow_id=workflow_id))
+        db.commit()
+    workflow.is_favorite = True
+    return workflow
+
+
+@app.delete("/workflows/{workflow_id}/favorite", response_model=schemas.WorkflowPublic)
+def unfavorite_workflow(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> models.Workflow:
+    workflow = db.get(models.Workflow, workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow não encontrado.")
+    existing = db.get(models.WorkflowFavorite, (current_user.id, workflow_id))
+    if existing is not None:
+        db.delete(existing)
+        db.commit()
+    workflow.is_favorite = False
     return workflow
 
 
