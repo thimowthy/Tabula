@@ -30,7 +30,7 @@ export function ImportAndRunModal({ workflow, onClose }: { workflow: ServerWorkf
     setRunning(true);
     setResult(null);
     try {
-      const imported = await importWorkbookFile(file);
+      const { workbook: imported } = await importWorkbookFile(file);
       const sheetId = imported.sheets[0].id;
       const { dispatch } = useWorkbookStore.getState();
       dispatch({ type: 'IMPORT_SHEETS', payload: { sheets: imported.sheets } });

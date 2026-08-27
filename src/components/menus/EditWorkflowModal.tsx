@@ -39,7 +39,7 @@ export function EditWorkflowModal({ workflow, onClose }: { workflow: ServerWorkf
     try {
       let resolvedSheetId: string;
       if (target === 'import' && file) {
-        const imported = await importWorkbookFile(file);
+        const { workbook: imported } = await importWorkbookFile(file);
         dispatch({ type: 'IMPORT_SHEETS', payload: { sheets: imported.sheets } });
         resolvedSheetId = imported.sheets[0].id;
       } else {

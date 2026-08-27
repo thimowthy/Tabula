@@ -11,16 +11,36 @@ function cellToValue(v: unknown): CellValue {
   return String(v);
 }
 
-export async function importWorkbookFile(file: File): Promise<WorkbookModel> {
+export interface ImportResult {
+  workbook: WorkbookModel;
+  /**
+   * sheetId -> id of the row auto-detected as the header, only populated
+   * when `promoteHeader` is false. Lets the caller apply the promotion
+   * explicitly (e.g. via `dispatch`, so it's undoable and shows up as a real
+   * workflow step) instead of it being silently baked into the import — a
+   * wrong auto-detection used to discard rows above it (including the row
+   * the user actually wanted as the header) before there was ever a chance
+   * to correct it, which made "Definir linha de cabeçalho" look broken.
+   */
+  detectedHeaderRowId: Record<string, string>;
+}
+
+export async function importWorkbookFile(
+  file: File,
+  options: { promoteHeader?: boolean } = {},
+): Promise<ImportResult> {
+  const promoteHeader = options.promoteHeader ?? true;
   const buffer = await file.arrayBuffer();
   const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+
+  const detectedHeaderRowId: Record<string, string> = {};
 
   const sheets: SheetModel[] = wb.SheetNames.map((sheetName) => {
     const ws = wb.Sheets[sheetName];
     const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as unknown[][];
     const headerRowIndex = detectHeaderRow(aoa);
-    const headerRow = aoa[headerRowIndex] ?? [];
-    const dataRows = aoa.slice(headerRowIndex + 1);
+    const headerRow = promoteHeader ? (aoa[headerRowIndex] ?? []) : [];
+    const dataRows = promoteHeader ? aoa.slice(headerRowIndex + 1) : aoa;
     const columnCount = Math.max(headerRow.length, ...dataRows.map((r) => r.length), 1);
 
     const values: CellValue[][] = dataRows.map((r) => Array.from({ length: columnCount }, (_, i) => cellToValue(r[i])));
@@ -40,10 +60,23 @@ export async function importWorkbookFile(file: File): Promise<WorkbookModel> {
       return createRow(cells);
     });
 
-    return { id: uuid(), name: sheetName, columns, rows, workflowSteps: [] };
+    const sheet: SheetModel = {
+      id: uuid(),
+      name: sheetName,
+      columns,
+      rows,
+      baseColumns: columns,
+      baseRows: rows,
+      workflowSteps: [],
+    };
+    if (!promoteHeader) {
+      const detectedRow = rows[headerRowIndex];
+      if (detectedRow) detectedHeaderRowId[sheet.id] = detectedRow.id;
+    }
+    return sheet;
   });
 
-  return { sheets, activeSheetId: sheets[0].id };
+  return { workbook: { sheets, activeSheetId: sheets[0].id }, detectedHeaderRowId };
 }
 
 function sheetToAOA(sheet: SheetModel): CellValue[][] {

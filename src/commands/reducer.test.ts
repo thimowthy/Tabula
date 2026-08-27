@@ -7,7 +7,13 @@ import type { WorkbookModel } from '../model/types';
 function makeWorkbook(values: string[]): { workbook: WorkbookModel; sheetId: string; columnId: string } {
   const column = createColumn({ name: 'A', type: 'text' });
   const rows = values.map((v) => createRow({ [column.id]: v }));
-  const sheet = { ...createEmptySheet('Planilha1', 0, 0), columns: [column], rows };
+  const sheet = {
+    ...createEmptySheet('Planilha1', 0, 0),
+    columns: [column],
+    rows,
+    baseColumns: [column],
+    baseRows: rows,
+  };
   return {
     workbook: { sheets: [sheet], activeSheetId: sheet.id },
     sheetId: sheet.id,
@@ -21,7 +27,13 @@ function makeTwoColumnWorkbook(
   const target = createColumn({ name: 'Apelido', type: 'text' });
   const source = createColumn({ name: 'Nome', type: 'text' });
   const rowRecords = rows.map((r) => createRow({ [target.id]: r.target, [source.id]: r.source }));
-  const sheet = { ...createEmptySheet('Planilha1', 0, 0), columns: [target, source], rows: rowRecords };
+  const sheet = {
+    ...createEmptySheet('Planilha1', 0, 0),
+    columns: [target, source],
+    rows: rowRecords,
+    baseColumns: [target, source],
+    baseRows: rowRecords,
+  };
   return {
     workbook: { sheets: [sheet], activeSheetId: sheet.id },
     sheetId: sheet.id,
@@ -248,6 +260,82 @@ describe('CAST_TO_FLOAT', () => {
     const result = applyCommand(workbook, { type: 'CAST_TO_FLOAT', payload: { sheetId, columnId } });
     const sheet = result.workbook.sheets[0];
     expect(sheet.rows.map((r) => r.cells[columnId])).toEqual([null, null]);
+  });
+});
+
+describe('workflow step log edits recompute the grid, not just the log', () => {
+  it('DELETE_WORKFLOW_STEP undoes that step\'s effect on the data', () => {
+    const { workbook, sheetId, columnId } = makeWorkbook(['x', '', 'y']);
+    const afterFill = applyCommand(workbook, {
+      type: 'FILL_CONSTANT',
+      payload: { sheetId, columnId, fillType: 'constant', value: 'z', sourceColumnId: null },
+    });
+    expect(afterFill.workbook.sheets[0].rows.map((r) => r.cells[columnId])).toEqual(['z', 'z', 'z']);
+
+    const stepId = afterFill.workbook.sheets[0].workflowSteps[0].id;
+    const afterDelete = applyCommand(afterFill.workbook, {
+      type: 'DELETE_WORKFLOW_STEP',
+      payload: { sheetId, stepId },
+    });
+    const sheet = afterDelete.workbook.sheets[0];
+    expect(sheet.workflowSteps).toHaveLength(0);
+    expect(sheet.rows.map((r) => r.cells[columnId])).toEqual(['x', '', 'y']);
+  });
+
+  it('UPDATE_WORKFLOW_STEP reapplies the step with the edited params', () => {
+    const { workbook, sheetId, columnId } = makeWorkbook(['x', '', 'y']);
+    const afterFill = applyCommand(workbook, {
+      type: 'FILL_CONSTANT',
+      payload: { sheetId, columnId, fillType: 'constant', value: 'z', sourceColumnId: null },
+    });
+    const step = afterFill.workbook.sheets[0].workflowSteps[0];
+    const afterUpdate = applyCommand(afterFill.workbook, {
+      type: 'UPDATE_WORKFLOW_STEP',
+      payload: { sheetId, stepId: step.id, params: { ...(step.params as Record<string, unknown>), value: 'w' } },
+    });
+    const sheet = afterUpdate.workbook.sheets[0];
+    expect(sheet.rows.map((r) => r.cells[columnId])).toEqual(['w', 'w', 'w']);
+  });
+
+  it('REORDER_WORKFLOW_STEP recomputes the data in the new order', () => {
+    const { workbook, sheetId, columnId } = makeWorkbook(['']);
+    const step1 = applyCommand(workbook, {
+      type: 'FILL_CONSTANT',
+      payload: { sheetId, columnId, fillType: 'constant', value: 'first', sourceColumnId: null },
+    });
+    const step2 = applyCommand(step1.workbook, {
+      type: 'FILL_CONSTANT',
+      payload: { sheetId, columnId, fillType: 'constant', value: 'second', sourceColumnId: null },
+    });
+    const sheet2 = step2.workbook.sheets[0];
+    expect(sheet2.rows[0].cells[columnId]).toBe('second');
+
+    const [firstStep, secondStep] = sheet2.workflowSteps;
+    const reordered = applyCommand(step2.workbook, {
+      type: 'REORDER_WORKFLOW_STEP',
+      payload: { sheetId, stepId: secondStep.id, beforeStepId: firstStep.id },
+    });
+    expect(reordered.workbook.sheets[0].rows[0].cells[columnId]).toBe('first');
+  });
+
+  it('reports (without crashing) a later step that can no longer resolve once an earlier one it depended on is removed', () => {
+    const { workbook, sheetId, columnId } = makeWorkbook(['a']);
+    const renamed = applyCommand(workbook, { type: 'RENAME_COLUMN', payload: { sheetId, columnId, name: 'B' } });
+    const renameStepId = renamed.workbook.sheets[0].workflowSteps[0].id;
+    const filled = applyCommand(renamed.workbook, {
+      type: 'FILL_CONSTANT',
+      payload: { sheetId, columnId, fillType: 'constant', value: 'z', sourceColumnId: null },
+    });
+
+    const afterDelete = applyCommand(filled.workbook, {
+      type: 'DELETE_WORKFLOW_STEP',
+      payload: { sheetId, stepId: renameStepId },
+    });
+    expect(afterDelete.skippedSteps).toHaveLength(1);
+    expect(afterDelete.skippedSteps![0].reason).toContain('B');
+    // The fill_constant step stays in the log even though it couldn't be
+    // replayed — the user can still see and fix it, nothing is silently lost.
+    expect(afterDelete.workbook.sheets[0].workflowSteps).toHaveLength(1);
   });
 });
 

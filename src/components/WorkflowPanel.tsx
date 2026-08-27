@@ -62,6 +62,8 @@ export function WorkflowPanel() {
   const dispatch = useWorkbookStore((s) => s.dispatch);
   const editingServerWorkflow = useWorkbookStore((s) => s.editingServerWorkflow);
   const boundWorkflow = editingServerWorkflow?.sheetId === sheet.id ? editingServerWorkflow : null;
+  const replayWarning = useWorkbookStore((s) => s.workflowReplayWarning);
+  const clearWorkflowReplayWarning = useWorkbookStore((s) => s.clearWorkflowReplayWarning);
   const [width, setWidth] = useState(320);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const [editingStep, setEditingStep] = useState<WorkflowOperation | null>(null);
@@ -256,6 +258,36 @@ export function WorkflowPanel() {
           {sheet.workflowSteps.length === 1 ? '' : 's'}
         </p>
       </div>
+
+      {replayWarning && replayWarning.length > 0 && (
+        <div
+          className="mx-3 mt-2 rounded border px-2.5 py-2 text-[11px] leading-relaxed"
+          style={{ borderColor: 'var(--color-danger)', color: 'var(--color-danger)' }}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <p className="font-medium">
+              {replayWarning.length === 1
+                ? '1 etapa não pôde ser recalculada após essa mudança:'
+                : `${replayWarning.length} etapas não puderam ser recalculadas após essa mudança:`}
+            </p>
+            <button
+              type="button"
+              onClick={clearWorkflowReplayWarning}
+              className="shrink-0 text-[11px] underline"
+              style={{ color: 'var(--color-danger)' }}
+            >
+              Dispensar
+            </button>
+          </div>
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {replayWarning.map((outcome, i) => (
+              <li key={i}>
+                {describeOperation(outcome.step)} — {outcome.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-3 py-2">
         {sheet.workflowSteps.length === 0 ? (

@@ -40,7 +40,7 @@ export function createEmptySheet(name: string, columnCount = 8, rowCount = 40): 
     for (const col of columns) cells[col.id] = null;
     return createRow(cells);
   });
-  return { id: uuid(), name, columns, rows, workflowSteps: [] };
+  return { id: uuid(), name, columns, rows, baseColumns: columns, baseRows: rows, workflowSteps: [] };
 }
 
 export function createEmptyWorkbook(): WorkbookModel {

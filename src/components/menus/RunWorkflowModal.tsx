@@ -81,7 +81,7 @@ export function RunWorkflowModal({ onClose, initialWorkflow }: RunWorkflowModalP
     try {
       let sheetId: string;
       if (target === 'import' && importedFile) {
-        const imported = await importWorkbookFile(importedFile);
+        const { workbook: imported } = await importWorkbookFile(importedFile);
         dispatch({ type: 'IMPORT_SHEETS', payload: { sheets: imported.sheets } });
         sheetId = imported.sheets[0].id;
         setActiveSheet(sheetId);

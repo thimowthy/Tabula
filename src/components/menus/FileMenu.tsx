@@ -20,8 +20,17 @@ export function FileMenu() {
     e.target.value = '';
     if (!file) return;
     try {
-      const wb = await importWorkbookFile(file);
+      const { workbook: wb, detectedHeaderRowId } = await importWorkbookFile(file, { promoteHeader: false });
       loadWorkbook(wb, file.name.replace(/\.(xlsx|csv)$/i, ''));
+      // Applied as a real, undoable command (rather than baked into the
+      // import) so a wrong auto-detection can be fixed afterwards: Ctrl+Z
+      // brings back every row, and "Definir linha de cabeçalho" can then
+      // pick the actual header row instead of it having already been
+      // discarded.
+      for (const sheet of wb.sheets) {
+        const rowId = detectedHeaderRowId[sheet.id];
+        if (rowId) dispatch({ type: 'PROMOTE_HEADER_ROW', payload: { sheetId: sheet.id, rowId } });
+      }
     } catch {
       window.alert('Não foi possível importar o arquivo. Verifique se é um .xlsx ou .csv válido.');
     }

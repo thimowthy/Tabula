@@ -3,6 +3,7 @@ import { createEmptyWorkbook } from '../model/factory';
 import type { SelectionRange, WorkbookModel } from '../model/types';
 import { applyCommand } from '../commands/reducer';
 import type { AppCommand } from '../commands/types';
+import type { StepOutcome } from '../workflow/runWorkflow';
 
 const MAX_HISTORY = 100;
 
@@ -40,6 +41,11 @@ interface WorkbookStore {
   shortcutsModalOpen: boolean;
   view: AppView;
   editingServerWorkflow: EditingServerWorkflow | null;
+  /** Steps that failed to replay after the last edit/delete/reorder of a
+   * workflow step (see `ApplyResult.skippedSteps` in the reducer) — e.g. a
+   * later step depended on a column an earlier one no longer provides.
+   * Cleared on every dispatch unless that dispatch produced its own. */
+  workflowReplayWarning: StepOutcome[] | null;
 
   dispatch: (command: AppCommand) => void;
   undo: () => void;
@@ -60,6 +66,7 @@ interface WorkbookStore {
   setShortcutsModalOpen: (open: boolean) => void;
   setView: (view: AppView) => void;
   setEditingServerWorkflow: (value: EditingServerWorkflow | null) => void;
+  clearWorkflowReplayWarning: () => void;
 }
 
 export const useWorkbookStore = create<WorkbookStore>((set, get) => ({
@@ -73,14 +80,20 @@ export const useWorkbookStore = create<WorkbookStore>((set, get) => ({
   shortcutsModalOpen: false,
   view: 'workflows',
   editingServerWorkflow: null,
+  workflowReplayWarning: null,
 
   dispatch: (command) => {
     const { workbook, past } = get();
-    const { workbook: next, label } = applyCommand(workbook, command);
+    const { workbook: next, label, skippedSteps } = applyCommand(workbook, command);
     if (next === workbook) return;
     const nextPast = [...past, { label, workbook }];
     if (nextPast.length > MAX_HISTORY) nextPast.shift();
-    set({ workbook: next, past: nextPast, future: [] });
+    set({
+      workbook: next,
+      past: nextPast,
+      future: [],
+      workflowReplayWarning: skippedSteps && skippedSteps.length > 0 ? skippedSteps : null,
+    });
   },
 
   undo: () => {
@@ -122,6 +135,7 @@ export const useWorkbookStore = create<WorkbookStore>((set, get) => ({
       selection: null,
       filters: {},
       documentName: documentName ?? 'Sem título',
+      workflowReplayWarning: null,
     });
   },
 
@@ -140,6 +154,7 @@ export const useWorkbookStore = create<WorkbookStore>((set, get) => ({
   setShortcutsModalOpen: (shortcutsModalOpen) => set({ shortcutsModalOpen }),
   setView: (view) => set({ view }),
   setEditingServerWorkflow: (editingServerWorkflow) => set({ editingServerWorkflow }),
+  clearWorkflowReplayWarning: () => set({ workflowReplayWarning: null }),
 }));
 
 export function useActiveSheet() {

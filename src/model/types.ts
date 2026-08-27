@@ -110,6 +110,16 @@ export interface SheetModel {
   name: string;
   columns: ColumnDef[];
   rows: RowRecord[];
+  /**
+   * Column/row state before any `workflowSteps` ran (captured once, at
+   * import or sheet creation, and never mutated afterward). Lets a step be
+   * edited, deleted, or reordered later and the visible `columns`/`rows`
+   * recomputed by replaying the (now different) step list from scratch —
+   * otherwise the grid would keep showing the result of the step's
+   * original params/position even after the log says something else.
+   */
+  baseColumns: ColumnDef[];
+  baseRows: RowRecord[];
   /** Declarative operations recorded as the user edits this sheet — the actual
    * workflow, kept separate from the row/column data it was demonstrated on. */
   workflowSteps: WorkflowOperation[];

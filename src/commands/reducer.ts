@@ -1,10 +1,11 @@
 import { v4 as uuid } from 'uuid';
-import { createColumn, createEmptySheet, createRow } from '../model/factory';
+import { createColumn, createEmptySheet, createRow, inferColumnType } from '../model/factory';
 import { getSheet, updateSheet } from '../model/ops';
 import { evaluateCondition, numOrStr } from '../model/filterEval';
 import { nameCondition, type ConditionExpr } from '../model/condition';
-import type { CellValue, ColumnDef, RowRecord, SheetModel, WorkbookModel, WorkflowOperation } from '../model/types';
+import type { CellStyle, CellValue, ColumnDef, RowRecord, SheetModel, WorkbookModel, WorkflowOperation } from '../model/types';
 import { createWorkflowStep } from '../workflow/operations';
+import { resolveWorkflowStep, type StepOutcome } from '../workflow/runWorkflow';
 import type { AppCommand } from './types';
 
 interface WhenBranchResult {
@@ -30,6 +31,11 @@ function runWhenBranch(workbook: WorkbookModel, sheetId: string, commands: AppCo
 export interface ApplyResult {
   workbook: WorkbookModel;
   label: string;
+  /** Steps that couldn't be replayed after an edit/delete/reorder changed the
+   * step log — e.g. a later step referenced a column only a step before it
+   * (now removed or changed) used to provide. Only set by the workflow-step
+   * log commands; absent otherwise. */
+  skippedSteps?: StepOutcome[];
 }
 
 function evaluateTemplate(template: string, cells: Record<string, CellValue>, columns: ColumnDef[]): string {
@@ -65,20 +71,20 @@ function compareValues(a: CellValue, b: CellValue, type: ColumnDef['type']): num
   return String(a).localeCompare(String(b), 'pt-BR', { sensitivity: 'base' });
 }
 
-function cloneSheetWithNewIds(sheet: SheetModel, newName: string): SheetModel {
+function cloneColumnRowSet(columns: ColumnDef[], rows: RowRecord[]): { columns: ColumnDef[]; rows: RowRecord[] } {
   const columnIdMap = new Map<string, string>();
-  const columns: ColumnDef[] = sheet.columns.map((c) => {
+  const newColumns: ColumnDef[] = columns.map((c) => {
     const newId = uuid();
     columnIdMap.set(c.id, newId);
     return { ...c, id: newId, numberFormat: { ...c.numberFormat }, style: { ...c.style } };
   });
-  const rows: RowRecord[] = sheet.rows.map((r) => {
+  const newRows: RowRecord[] = rows.map((r) => {
     const cells: Record<string, CellValue> = {};
     for (const [oldColId, val] of Object.entries(r.cells)) {
       const newColId = columnIdMap.get(oldColId);
       if (newColId) cells[newColId] = val;
     }
-    let styles: Record<string, import('../model/types').CellStyle> | undefined;
+    let styles: Record<string, CellStyle> | undefined;
     if (r.styles) {
       styles = {};
       for (const [oldColId, style] of Object.entries(r.styles)) {
@@ -88,7 +94,64 @@ function cloneSheetWithNewIds(sheet: SheetModel, newName: string): SheetModel {
     }
     return { id: uuid(), cells, styles };
   });
-  return { id: uuid(), name: newName, columns, rows, workflowSteps: [...sheet.workflowSteps] };
+  return { columns: newColumns, rows: newRows };
+}
+
+function cloneSheetWithNewIds(sheet: SheetModel, newName: string): SheetModel {
+  const current = cloneColumnRowSet(sheet.columns, sheet.rows);
+  const base = cloneColumnRowSet(sheet.baseColumns, sheet.baseRows);
+  return {
+    id: uuid(),
+    name: newName,
+    columns: current.columns,
+    rows: current.rows,
+    baseColumns: base.columns,
+    baseRows: base.rows,
+    workflowSteps: [...sheet.workflowSteps],
+  };
+}
+
+/**
+ * Recomputes a sheet's live `columns`/`rows` by replaying `steps` from
+ * scratch against `base` — the state before any workflow step ever ran.
+ * Used whenever the step log itself is edited, deleted from, or reordered,
+ * so the grid stops showing a result that no longer matches the recorded
+ * recipe. Runs against a throwaway scratch sheet so it doesn't touch undo
+ * history or duplicate entries into the real `workflowSteps` log — the
+ * caller keeps that log exactly as edited, independent of what replaying it
+ * would have logged on its own.
+ */
+function replaySheetSteps(
+  base: { columns: ColumnDef[]; rows: RowRecord[] },
+  steps: WorkflowOperation[],
+): { columns: ColumnDef[]; rows: RowRecord[]; skipped: StepOutcome[] } {
+  let scratch: SheetModel = {
+    id: 'scratch',
+    name: '',
+    columns: base.columns,
+    rows: base.rows,
+    baseColumns: base.columns,
+    baseRows: base.rows,
+    workflowSteps: [],
+  };
+  const skipped: StepOutcome[] = [];
+
+  for (const step of steps) {
+    let resolved: ReturnType<typeof resolveWorkflowStep>;
+    try {
+      resolved = resolveWorkflowStep(step, scratch);
+    } catch {
+      resolved = { error: 'falha ao interpretar a etapa' };
+    }
+    if ('error' in resolved) {
+      skipped.push({ step, reason: resolved.error });
+      continue;
+    }
+    const scratchWorkbook: WorkbookModel = { sheets: [scratch], activeSheetId: scratch.id };
+    scratch = getSheet(applyCommand(scratchWorkbook, resolved.command).workbook, scratch.id);
+  }
+
+  return { columns: scratch.columns, rows: scratch.rows, skipped };
 }
 
 export function applyCommand(workbook: WorkbookModel, command: AppCommand): ApplyResult {
@@ -950,16 +1013,24 @@ export function applyCommand(workbook: WorkbookModel, command: AppCommand): Appl
       const rowIndex = sheetBefore.rows.findIndex((r) => r.id === rowId);
       if (rowIndex === -1) return { workbook, label: 'Definir linha de cabeçalho' };
       const headerRow = sheetBefore.rows[rowIndex];
-      const next = updateSheet(workbook, sheetId, (s) => ({
-        ...s,
-        columns: s.columns.map((c) => {
-          const raw = headerRow.cells[c.id];
-          const name = raw === null || raw === undefined ? '' : String(raw).trim();
-          return name ? { ...c, name } : c;
-        }),
-        rows: s.rows.slice(rowIndex + 1),
-        workflowSteps: [...s.workflowSteps, createWorkflowStep('promote_header_row', { row_index: rowIndex })],
-      }));
+      const next = updateSheet(workbook, sheetId, (s) => {
+        const dataRows = s.rows.slice(rowIndex + 1);
+        return {
+          ...s,
+          // Re-infer each column's type from the rows that remain once the
+          // header (and anything above it, e.g. a title row) is gone — the
+          // type inferred at import time may have been skewed by exactly the
+          // rows this step removes.
+          columns: s.columns.map((c) => {
+            const raw = headerRow.cells[c.id];
+            const name = raw === null || raw === undefined ? '' : String(raw).trim();
+            const type = inferColumnType(dataRows.map((r) => r.cells[c.id]));
+            return { ...c, ...(name ? { name } : {}), type };
+          }),
+          rows: dataRows,
+          workflowSteps: [...s.workflowSteps, createWorkflowStep('promote_header_row', { row_index: rowIndex })],
+        };
+      });
       return { workbook: next, label: 'Definir linha de cabeçalho' };
     }
 
@@ -1034,37 +1105,43 @@ export function applyCommand(workbook: WorkbookModel, command: AppCommand): Appl
 
     case 'UPDATE_WORKFLOW_STEP': {
       const { sheetId, stepId, operationType, params } = command.payload;
-      const next = updateSheet(workbook, sheetId, (s) => ({
-        ...s,
-        workflowSteps: s.workflowSteps.map((step) =>
-          step.id === stepId ? ({ ...step, type: operationType ?? step.type, params } as WorkflowOperation) : step,
-        ),
-      }));
-      return { workbook: next, label: 'Editar etapa do workflow' };
+      const sheetBefore = getSheet(workbook, sheetId);
+      if (!sheetBefore.workflowSteps.some((step) => step.id === stepId)) {
+        return { workbook, label: 'Editar etapa do workflow' };
+      }
+      const workflowSteps = sheetBefore.workflowSteps.map((step) =>
+        step.id === stepId ? ({ ...step, type: operationType ?? step.type, params } as WorkflowOperation) : step,
+      );
+      const replay = replaySheetSteps({ columns: sheetBefore.baseColumns, rows: sheetBefore.baseRows }, workflowSteps);
+      const next = updateSheet(workbook, sheetId, (s) => ({ ...s, columns: replay.columns, rows: replay.rows, workflowSteps }));
+      return { workbook: next, label: 'Editar etapa do workflow', skippedSteps: replay.skipped };
     }
 
     case 'REORDER_WORKFLOW_STEP': {
       const { sheetId, stepId, beforeStepId } = command.payload;
       if (stepId === beforeStepId) return { workbook, label: 'Reordenar etapa do workflow' };
-      const next = updateSheet(workbook, sheetId, (s) => {
-        const moved = s.workflowSteps.find((step) => step.id === stepId);
-        if (!moved) return s;
-        const remaining = s.workflowSteps.filter((step) => step.id !== stepId);
-        const insertAt = beforeStepId ? remaining.findIndex((step) => step.id === beforeStepId) : -1;
-        const workflowSteps = [...remaining];
-        workflowSteps.splice(insertAt === -1 ? remaining.length : insertAt, 0, moved);
-        return { ...s, workflowSteps };
-      });
-      return { workbook: next, label: 'Reordenar etapa do workflow' };
+      const sheetBefore = getSheet(workbook, sheetId);
+      const moved = sheetBefore.workflowSteps.find((step) => step.id === stepId);
+      if (!moved) return { workbook, label: 'Reordenar etapa do workflow' };
+      const remaining = sheetBefore.workflowSteps.filter((step) => step.id !== stepId);
+      const insertAt = beforeStepId ? remaining.findIndex((step) => step.id === beforeStepId) : -1;
+      const workflowSteps = [...remaining];
+      workflowSteps.splice(insertAt === -1 ? remaining.length : insertAt, 0, moved);
+      const replay = replaySheetSteps({ columns: sheetBefore.baseColumns, rows: sheetBefore.baseRows }, workflowSteps);
+      const next = updateSheet(workbook, sheetId, (s) => ({ ...s, columns: replay.columns, rows: replay.rows, workflowSteps }));
+      return { workbook: next, label: 'Reordenar etapa do workflow', skippedSteps: replay.skipped };
     }
 
     case 'DELETE_WORKFLOW_STEP': {
       const { sheetId, stepId } = command.payload;
-      const next = updateSheet(workbook, sheetId, (s) => ({
-        ...s,
-        workflowSteps: s.workflowSteps.filter((step) => step.id !== stepId),
-      }));
-      return { workbook: next, label: 'Excluir etapa do workflow' };
+      const sheetBefore = getSheet(workbook, sheetId);
+      if (!sheetBefore.workflowSteps.some((step) => step.id === stepId)) {
+        return { workbook, label: 'Excluir etapa do workflow' };
+      }
+      const workflowSteps = sheetBefore.workflowSteps.filter((step) => step.id !== stepId);
+      const replay = replaySheetSteps({ columns: sheetBefore.baseColumns, rows: sheetBefore.baseRows }, workflowSteps);
+      const next = updateSheet(workbook, sheetId, (s) => ({ ...s, columns: replay.columns, rows: replay.rows, workflowSteps }));
+      return { workbook: next, label: 'Excluir etapa do workflow', skippedSteps: replay.skipped };
     }
 
     case 'IMPORT_SHEETS': {
