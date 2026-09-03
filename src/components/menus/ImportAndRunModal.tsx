@@ -30,7 +30,12 @@ export function ImportAndRunModal({ workflow, onClose }: { workflow: ServerWorkf
     setRunning(true);
     setResult(null);
     try {
-      const { workbook: imported } = await importWorkbookFile(file);
+      // promoteHeader: false — the workflow's own recorded steps (typically
+      // starting with promote_header_row) are the source of truth for header
+      // handling; auto-promoting here too would shift row indices and make
+      // the replayed promote_header_row step (and everything after it) act
+      // on the wrong rows.
+      const { workbook: imported } = await importWorkbookFile(file, { promoteHeader: false });
       const sheetId = imported.sheets[0].id;
       const { dispatch } = useWorkbookStore.getState();
       dispatch({ type: 'IMPORT_SHEETS', payload: { sheets: imported.sheets } });

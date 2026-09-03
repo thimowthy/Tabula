@@ -39,7 +39,11 @@ export function EditWorkflowModal({ workflow, onClose }: { workflow: ServerWorkf
     try {
       let resolvedSheetId: string;
       if (target === 'import' && file) {
-        const { workbook: imported } = await importWorkbookFile(file);
+        // promoteHeader: false — the workflow's own recorded steps (typically
+        // starting with promote_header_row) are the source of truth for
+        // header handling; auto-promoting here too would shift row indices
+        // and make the replayed promote_header_row step act on the wrong row.
+        const { workbook: imported } = await importWorkbookFile(file, { promoteHeader: false });
         dispatch({ type: 'IMPORT_SHEETS', payload: { sheets: imported.sheets } });
         resolvedSheetId = imported.sheets[0].id;
       } else {
